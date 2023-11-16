@@ -6,7 +6,10 @@ class Stream:
 
     _procedures: typing.List[typing.Callable]
 
-    async def consume(
+    def __init__(self):
+        self._procedures = []
+
+    def consume(
         self,
         procedure: typing.Callable,
     ):

@@ -1,185 +1,149 @@
+import enum
 import typing
 
-from attrs import define
+import shared
 
 
-Domain = define(kw_only=True)
+class MessageKinds(enum.auto):
+    Call = 127
+    Cancel = 126
+    Next = 125
+    Stop = 124
+    Publish = 1
+    Accept = 0
+    Yield = -125
+    Error = -126
+    Reply = -127
 
 
-@Domain
+CallProcedure = typing.Callable
+
+PublishProcedure = typing.Callable
+
+
+@shared.Domain
 class eventFeatures:
     """
     """
 
 
-@Domain
+@shared.Domain
 class eventRoute:
     """
     """
 
 
-@Domain
+@shared.Domain
 class Event:
-    __public__ = ('id', 'kind',)
-
-    id: str
+    ID: str
 
 
-@Domain
+@shared.Domain
 class AcceptFeatures(eventFeatures):
-    __public__ = ('sourceID',)
-
     sourceID: str
 
 
-@Domain
+@shared.Domain
 class AcceptEvent(Event):
-    __public__ = ('id', 'kind', 'features',)
-
-    kind: int = 0
+    kind: int = MessageKinds.Accept
     features: AcceptFeatures
 
 
-@Domain
+@shared.Domain
 class PublishFeatures(eventFeatures):
-    __public__ = ('uri', 'include', 'exclude',)
-
-    uri: str
-    include: typing.List[str]
-    exclude: typing.List[str]
+    URI: str
+    include: list[str] = shared.field(default_factory=list)
+    exclude: list[str] = shared.field(default_factory=list)
 
 
-@Domain
+@shared.Domain
 class PublishRoute(eventRoute):
-    __public__ = ('publisherID', 'subscriberID', 'endpointID', 'visitedRouters',)
-
     publisherID: str
     subscriberID: str
     endpointID: str
-    visitedRouters: typing.List[str]
+    visitedRouters: list[str] = shared.field(default_factory=list)
 
 
-@Domain
+@shared.Domain
 class PublishEvent(Event):
-    __public__ = ('id', 'kind', 'features', 'payload', 'route',)
-
-    kind = 1
+    kind: int = MessageKinds.Publish
     features: PublishFeatures
     payload: typing.Any
-    route: PublishRoute
+    route: PublishRoute | None = None
 
 
-@Domain
+@shared.Domain
 class CallFeatures(eventFeatures):
-    __public__ = ('uri', 'timeout',)
-
-    uri: str
+    URI: str
     timeout: int
 
 
-@Domain
+@shared.Domain
 class CallRoute(eventRoute):
-    __public__ = ('callerID', 'executorID', 'endpointID', 'visitedRouters',)
-
     callerID: str
     executorID: str
     endpointID: str
-    visitedRouters: typing.List[str]
+    visitedRouters: list[str] = shared.field(default_factory=list)
 
 
-@Domain
+@shared.Domain
 class CallEvent(Event):
-    __public__ = ('id', 'kind', 'features', 'payload', 'route',)
-
-    kind = 127
+    kind: int = MessageKinds.Call
     features: CallFeatures
     payload: typing.Any
-    route: CallRoute
+    route: CallRoute | None = None
 
 
-@Domain
+@shared.Domain
 class ReplyFeatures(eventFeatures):
-    __public__ = ('invocationID',)
-
     invocationID: str
 
 
-@Domain
+@shared.Domain
 class ReplyEvent(Event):
-    __public__ = ('id', 'kind', 'features', 'payload', 'route',)
-
-    kind = -127
+    kind: int = MessageKinds.Reply
     features: ReplyFeatures
     payload: typing.Any
 
 
-@Domain
+@shared.Domain
 class ErrorEventPayload:
-    __public__ = ('code',)
-
     code: str
 
 
-@Domain
+@shared.Domain
 class ErrorEvent(ReplyEvent):
-    __public__ = ('id', 'kind', 'features', 'payload', 'route',)
-
-    kind = -125
+    kind: int = MessageKinds.Error
     payload: ErrorEventPayload
 
 
-@Domain
+@shared.Domain
 class options:
-    __public__ = ('route',)
-
-    route: typing.List[str]
+    route: list[str] = shared.field(default_factory=list)
 
 
-@Domain
+@shared.Domain
 class RegisterOptions(options):
     ...
 
 
-@Domain
+@shared.Domain
 class SubscribeOptions(options):
     ...
 
 
-@Domain
+@shared.Domain
 class resource:
-    id: str
-    uri: str
+    ID: str
+    URI: str
     authorID: str
 
 
-@Domain
+@shared.Domain
 class Registration(resource):
-    __public__ = ('id', 'uri', 'authorID', 'options',)
-
     options: RegisterOptions
 
 
-@Domain
+@shared.Domain
 class Subscription(resource):
-    __public__ = ('id', 'uri', 'authorID', 'options',)
-
     options: SubscribeOptions
-
-
-event = CallEvent(
-    id='id',
-    features={
-        'uri': 'wamp.router.register',
-        'timeout': 100,
-    },
-    payload={
-
-    },
-    route={
-        'callerID': 'callerID',
-        'executorID': 'executorID',
-        'endpointID': 'endpointID',
-        'visitedRouters': ['visitedRouters'],
-    },
-)
-print(event)

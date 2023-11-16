@@ -1,14 +1,20 @@
 import asyncio
 import typing
-from uuid import uuid4
+
+from pydantic.dataclasses import dataclass
 
 import domain
 import peer
+import shared
 
 
+Domain = dataclass(kw_only=True, slots=True)
+
+
+@Domain
 class NewResourcePayload:
-    id: str
-    uri: str
+    ID: str
+    URI: str
     options: domain.RegisterOptions
 
 
@@ -47,33 +53,38 @@ class Session:
 
     async def publish(
         self,
-        uri: str,
+        URI: str,
         payload: typing.Any,
     ) -> domain.PublishEvent:
         """
         """
-        publish_event = domain.PublishEvent()
-        publish_event.id = uuid4()
-        publish_event.payload = payload
-        publish_event.features = domain.PublishFeatures()
-        publish_event.features.uri = uri
+        publish_event = domain.PublishEvent(
+            ID=shared.new_id(),
+            payload=payload,
+            features=domain.PublishFeatures(
+                URI=URI
+            ),
+        )
         await self._peer.send(publish_event)
 
     async def call(
         self,
-        uri: str,
+        URI: str,
         payload: typing.Any,
     ) -> domain.ReplyEvent:
         """
         """
-        call_event = domain.CallEvent()
-        call_event.id = uuid4()
-        call_event.payload = payload
-        call_event.features = domain.CallFeatures()
-        call_event.features.uri = uri
+        call_event = domain.CallEvent(
+            ID=shared.new_id(),
+            payload=payload,
+            features=domain.CallFeatures(
+                URI=URI,
+                timeout=100,
+            ),
+        )
 
         pending_reply_event = asyncio.Future()
-        self._peer.pending_reply_events[call_event.id] = pending_reply_event
+        self._peer.pending_reply_events[call_event.ID] = pending_reply_event
         await self._peer.send(call_event)
 
         reply_event = await pending_reply_event
@@ -85,35 +96,39 @@ class Session:
 
     async def register(
         self,
-        uri: str,
+        URI: str,
         options: domain.RegisterOptions,
         procedure: domain.CallProcedure,
     ) -> domain.Registration:
         """
         """
-        payload = NewResourcePayload()
-        payload.id = uuid4()
-        payload.uri = uri
-        payload.options = options
+        payload = NewResourcePayload(
+            ID=shared.new_id(),
+            URI=URI,
+            options=options,
+        )
         replyEvent = await self.call("wamp.router.register", payload)
-        self._registrations[replyEvent.payload.id] = procedure
-        return replyEvent.payload
+        registration = domain.Registration(**replyEvent.payload)
+        self._registrations[registration.ID] = procedure
+        return registration
 
     async def subscribe(
         self,
-        uri: str,
+        URI: str,
         options: domain.SubscribeOptions,
         procedure: domain.PublishProcedure,
     ) -> domain.Subscription:
         """
         """
-        payload = NewResourcePayload()
-        payload.id = uuid4()
-        payload.uri = uri
-        payload.options = options
+        payload = NewResourcePayload(
+            ID=shared.new_id(),
+            URI=URI,
+            options=options,
+        )
         replyEvent = await self.call("wamp.router.subscribe", payload)
-        self._subscriptions[replyEvent.payload.id] = procedure
-        return replyEvent.payload
+        subscription = domain.Subscription(replyEvent.payload)
+        self._subscriptions[subscription.ID] = procedure
+        return subscription
 
     async def unregister(
         self,

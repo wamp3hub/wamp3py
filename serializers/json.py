@@ -1,6 +1,7 @@
 import json
 
 import domain
+import shared
 
 
 class JSONSerializer:
@@ -11,7 +12,7 @@ class JSONSerializer:
     ) -> bytes:
         if not isinstance(event, domain.Event):
             raise Exception('InvalidEvent')
-        raw_event = event.dump()
+        raw_event = shared.dump(event)
         message = json.dumps(raw_event)
         return message
 
@@ -21,16 +22,15 @@ class JSONSerializer:
     ) -> domain.Event:
         raw_event = json.loads(message)
         match raw_event['kind']:
-            case domain.AcceptEvent.kind:
-                event = domain.AcceptEvent()
-            case domain.ReplyEvent.kind:
-                event = domain.ReplyEvent()
-            case domain.PublishEvent.kind:
-                event = domain.PublishEvent()
-            case domain.CallEvent.kind:
-                event = domain.CallEvent()
+            case domain.MessageKinds.Accept:
+                event = shared.load(domain.AcceptEvent, raw_event)
+            case domain.MessageKinds.Reply | domain.MessageKinds.Error | domain.MessageKinds.Yield:
+                event = shared.load(domain.ReplyEvent, raw_event)
+            case domain.MessageKinds.Publish:
+                event = shared.load(domain.PublishEvent, raw_event)
+            case domain.MessageKinds.Call:
+                event = shared.load(domain.CallEvent, raw_event)
             case _:
                 raise Exception('InvalidEvent')
-        event.load(raw_event)
         return event
 

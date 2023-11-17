@@ -8,7 +8,6 @@ class MessageKinds(enum.auto):
     Call = 127
     Cancel = 126
     Next = 125
-    Stop = 124
     Publish = 1
     Accept = 0
     Yield = -125
@@ -100,6 +99,12 @@ class ReplyFeatures(eventFeatures):
 
 
 @shared.Domain
+class CancelEvent(Event):
+    kind: int = MessageKinds.Cancel
+    features: ReplyFeatures
+
+
+@shared.Domain
 class ReplyEvent(Event):
     kind: int = MessageKinds.Reply
     features: ReplyFeatures
@@ -115,6 +120,22 @@ class ErrorEventPayload:
 class ErrorEvent(ReplyEvent):
     kind: int = MessageKinds.Error
     payload: ErrorEventPayload
+
+
+@shared.Domain
+class YieldEvent(ReplyEvent):
+    kind: int = MessageKinds.Yield
+
+
+@shared.Domain
+class NextFeatures(eventFeatures):
+    yieldID: str
+
+
+@shared.Domain
+class NextEvent(Event):
+    kind: int = MessageKinds.Next
+    features: NextFeatures
 
 
 @shared.Domain

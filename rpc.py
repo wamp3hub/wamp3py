@@ -31,6 +31,8 @@ async def main():
     replyEvent = await session.call('net.example.echo', 'Hello, WAMP!')
     print('reply', replyEvent.payload)
 
+    await session.leave('idk')
+
 
 if __name__ == '__main__':
     asyncio.run(main())

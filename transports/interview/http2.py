@@ -31,7 +31,7 @@ async def http2interview(
         async with session.post(url, json=request_json) as response:
             response_json = await response.json()
             if response.status == 200:
-                response_payload = SuccessPayload(**response_json)
+                response_payload = shared.load(SuccessPayload, response_json)
                 return response_payload
-            response_payload = ErrorPayload(**response_json)
+            response_payload = shared.load(ErrorPayload, response_json)
             raise Exception(response_payload.code)

@@ -1,17 +1,12 @@
-import asyncio
+import inspect
 import typing
-
-from pydantic.dataclasses import dataclass
 
 import domain
 import peer
 import shared
 
 
-Domain = dataclass(kw_only=True, slots=True)
-
-
-@Domain
+@shared.Domain
 class NewResourcePayload:
     ID: str
     URI: str
@@ -34,22 +29,52 @@ class Session:
 
     async def _on_publish(
         self,
-        publishEvent: domain.PublishEvent,
+        publish_event: domain.PublishEvent,
     ):
         """
         """
-        procedure = self._subscriptions.get(publishEvent.route.endpointID)
-        await procedure(publishEvent)
+        procedure = self._subscriptions.get(publish_event.route.endpointID)
+        if procedure is None:
+            print('ProcedureNotFound')
+        else:
+            await procedure(publish_event)
+
+    async def _on_yield(
+        self,
+        generator: typing.AsyncGenerator[domain.YieldEvent, None],
+    ):
+        """
+        """
+        async for yield_event in generator:
+            pending_next_event = self._peer.pending_next_events.new(yield_event.ID)
+            await self._peer.send(yield_event)
+            await pending_next_event
 
     async def _on_call(
         self,
-        callEvent: domain.CallEvent,
+        call_event: domain.CallEvent,
     ):
         """
         """
-        procedure = self._registrations.get(callEvent.route.endpointID)
-        replyEvent = await procedure(callEvent)
-        await self._peer.send(replyEvent)
+        pending_cancel_event = self._peer.pending_cancel_events.new(call_event.ID)
+
+        procedure = self._registrations.get(call_event.route.endpointID)
+        if procedure is None:
+            print('ProcedureNotFound')
+
+        [something], [pending] = await shared.select_first(
+            procedure(call_event),
+            pending_cancel_event,
+        )
+        match something:
+            case domain.ReplyEvent():
+                if inspect.isasyncgen(something):
+                    await self._on_yield(something)
+                else:
+                    pending.cancel()
+                    await self._peer.send(something)
+            case domain.CancelEvent():
+                pending.cancel()
 
     async def publish(
         self,
@@ -62,7 +87,7 @@ class Session:
             ID=shared.new_id(),
             payload=payload,
             features=domain.PublishFeatures(
-                URI=URI
+                URI=URI,
             ),
         )
         await self._peer.send(publish_event)
@@ -83,15 +108,12 @@ class Session:
             ),
         )
 
-        pending_reply_event = asyncio.Future()
-        self._peer.pending_reply_events[call_event.ID] = pending_reply_event
+        pending_reply_event = self._peer.pending_reply_events.new(call_event.ID)
         await self._peer.send(call_event)
-
         reply_event = await pending_reply_event
 
         if isinstance(reply_event, domain.ErrorEvent):
             raise Exception(reply_event.payload.code)
-
         return reply_event
 
     async def register(
@@ -108,7 +130,7 @@ class Session:
             options=options,
         )
         replyEvent = await self.call("wamp.router.register", payload)
-        registration = domain.Registration(**replyEvent.payload)
+        registration = shared.load(domain.Registration, replyEvent.payload)
         self._registrations[registration.ID] = procedure
         return registration
 
@@ -126,7 +148,7 @@ class Session:
             options=options,
         )
         replyEvent = await self.call("wamp.router.subscribe", payload)
-        subscription = domain.Subscription(replyEvent.payload)
+        subscription = shared.load(domain.Subscription, replyEvent.payload)
         self._subscriptions[subscription.ID] = procedure
         return subscription
 
@@ -154,3 +176,4 @@ class Session:
     ):
         """
         """
+        await self._peer.close()

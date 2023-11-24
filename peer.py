@@ -2,7 +2,7 @@ import asyncio
 import typing
 
 import domain
-import shared.stream
+import shared
 
 
 class Serializer(typing.Protocol):

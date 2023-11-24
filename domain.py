@@ -15,11 +15,6 @@ class MessageKinds(enum.auto):
     Reply = -127
 
 
-CallProcedure = typing.Callable
-
-PublishProcedure = typing.Callable
-
-
 @shared.Domain
 class eventFeatures:
     """
@@ -34,7 +29,7 @@ class eventRoute:
 
 @shared.Domain
 class Event:
-    ID: str
+    ID: str = shared.field(default_factory=shared.new_id)
 
 
 @shared.Domain
@@ -113,7 +108,7 @@ class ReplyEvent(Event):
 
 @shared.Domain
 class ErrorEventPayload:
-    code: str
+    message: str
 
 
 @shared.Domain
@@ -130,6 +125,7 @@ class YieldEvent(ReplyEvent):
 @shared.Domain
 class NextFeatures(eventFeatures):
     yieldID: str
+    timeout: int
 
 
 @shared.Domain

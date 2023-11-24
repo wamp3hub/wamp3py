@@ -1,16 +1,21 @@
-import inspect
 import typing
 
 import domain
+import endpoints
 import peer
 import shared
 
 
 @shared.Domain
 class NewResourcePayload:
-    ID: str
+    ID: str = shared.field(default_factory=shared.new_id)
     URI: str
     options: domain.RegisterOptions
+
+
+@shared.Domain
+class NewGeneratorPayload:
+    ID: str = shared.field(default_factory=shared.new_id)
 
 
 class Session:
@@ -33,22 +38,41 @@ class Session:
     ):
         """
         """
-        procedure = self._subscriptions.get(publish_event.route.endpointID)
-        if procedure is None:
-            print('ProcedureNotFound')
+        endpoint = self._subscriptions.get(publish_event.route.endpointID)
+        if endpoint is None:
+            print('EndpointNotFound')
         else:
-            await procedure(publish_event)
+            await endpoint(publish_event)
 
     async def _on_yield(
         self,
-        generator: typing.AsyncGenerator[domain.YieldEvent, None],
+        call_event: domain.CallEvent,
+        endpoint: endpoints.GeneratorEndpoint,
     ):
         """
         """
-        async for yield_event in generator:
+        yield_event = await endpoint.execute(call_event)
+        pending_stop_event = self._peer.pending_cancel_events.new(yield_event.payload.ID)
+
+        while generator.active:
             pending_next_event = self._peer.pending_next_events.new(yield_event.ID)
             await self._peer.send(yield_event)
-            await pending_next_event
+            [something], [pending] = await shared.select_first(
+                pending_next_event,
+                pending_stop_event,
+            )
+            match something:
+                case next_event if domain.NextEvent():
+                    pending_yield_event = generator.next(next_event)
+                    [something], [pending] = await shared.select_first(
+                        pending_yield_event,
+                        pending_stop_event,
+                    )
+                    match something:
+                        case domain.CancelEvent():
+                            pending.cancel()
+                case domain.CancelEvent():
+                    pending.cancel()
 
     async def _on_call(
         self,
@@ -58,21 +82,21 @@ class Session:
         """
         pending_cancel_event = self._peer.pending_cancel_events.new(call_event.ID)
 
-        procedure = self._registrations.get(call_event.route.endpointID)
-        if procedure is None:
-            print('ProcedureNotFound')
+        endpoint = self._registrations.get(call_event.route.endpointID)
+        if endpoint is None:
+            print('EndpointNotFound')
+        elif endpoint.is_generator:
+            await self._on_yield(call_event, endpoint)
 
         [something], [pending] = await shared.select_first(
-            procedure(call_event),
+            endpoint.execute(call_event),
             pending_cancel_event,
         )
         match something:
-            case domain.ReplyEvent():
-                if inspect.isasyncgen(something):
-                    await self._on_yield(something)
-                else:
-                    pending.cancel()
-                    await self._peer.send(something)
+            case reply_event if domain.ReplyEvent():
+                pending.cancel()
+                await self._peer.send(reply_event)
+                await self._on_yield(call_event, something)
             case domain.CancelEvent():
                 pending.cancel()
 
@@ -96,6 +120,7 @@ class Session:
         self,
         URI: str,
         payload: typing.Any,
+        timeout: int = 60,
     ) -> domain.ReplyEvent:
         """
         """
@@ -104,62 +129,43 @@ class Session:
             payload=payload,
             features=domain.CallFeatures(
                 URI=URI,
-                timeout=100,
+                timeout=timeout,
             ),
         )
-
         pending_reply_event = self._peer.pending_reply_events.new(call_event.ID)
         await self._peer.send(call_event)
         reply_event = await pending_reply_event
-
         if isinstance(reply_event, domain.ErrorEvent):
-            raise Exception(reply_event.payload.code)
+            raise Exception(reply_event.payload.message)
         return reply_event
-
-    async def register(
-        self,
-        URI: str,
-        options: domain.RegisterOptions,
-        procedure: domain.CallProcedure,
-    ) -> domain.Registration:
-        """
-        """
-        payload = NewResourcePayload(
-            ID=shared.new_id(),
-            URI=URI,
-            options=options,
-        )
-        replyEvent = await self.call("wamp.router.register", payload)
-        registration = shared.load(domain.Registration, replyEvent.payload)
-        self._registrations[registration.ID] = procedure
-        return registration
 
     async def subscribe(
         self,
         URI: str,
         options: domain.SubscribeOptions,
-        procedure: domain.PublishProcedure,
+        procedure: endpoints.PublishProcedure,
     ) -> domain.Subscription:
         """
         """
-        payload = NewResourcePayload(
-            ID=shared.new_id(),
-            URI=URI,
-            options=options,
-        )
+        payload = NewResourcePayload(URI=URI, options=options)
         replyEvent = await self.call("wamp.router.subscribe", payload)
         subscription = shared.load(domain.Subscription, replyEvent.payload)
         self._subscriptions[subscription.ID] = procedure
         return subscription
 
-    async def unregister(
+    async def register(
         self,
-        registration_id: str,
-    ):
+        URI: str,
+        options: domain.RegisterOptions,
+        procedure: endpoints.CallProcedure,
+    ) -> domain.Registration:
         """
         """
-        await self.call("wamp.router.unregister", registration_id)
-        self._registrations.pop(registration_id)
+        payload = NewResourcePayload(URI=URI, options=options)
+        replyEvent = await self.call("wamp.router.register", payload)
+        registration = shared.load(domain.Registration, replyEvent.payload)
+        self._registrations[registration.ID] = procedure
+        return registration
 
     async def unsubscribe(
         self,
@@ -167,8 +173,21 @@ class Session:
     ):
         """
         """
-        await self.call("wamp.router.unsubscribe", subscription_id)
-        self._registrations.pop(subscription_id)
+        try:
+            await self.call("wamp.router.unsubscribe", subscription_id)
+        finally:
+            self._registrations.pop(subscription_id)
+
+    async def unregister(
+        self,
+        registration_id: str,
+    ):
+        """
+        """
+        try:
+            await self.call("wamp.router.unregister", registration_id)
+        finally:
+            self._registrations.pop(registration_id)
 
     async def leave(
         self,

@@ -2,6 +2,7 @@ import asyncio
 import typing
 
 import domain
+import logger
 import shared
 
 
@@ -59,12 +60,17 @@ class Peer:
         self.pending_next_events = shared.PendingMap()
         self.pending_cancel_events = shared.PendingMap()
         self._loop = asyncio.get_running_loop()
+        self._logger = logger
 
     async def _safe_send(
         self,
         event: domain.Event,
     ):
-        await self.transport.write(event)
+        try:
+            await self.transport.write(event)
+        except Exception as e:
+            self._logger.error('send', exception=repr(e))
+            raise e
 
     async def send(
         self,
@@ -73,6 +79,7 @@ class Peer:
         pending_accept_event = self.pending_accept_events.new(event.ID)
         await self._safe_send(event)
         await pending_accept_event
+        self._logger.debug('sent', event=event)
 
     async def _acknowledge(
         self,
@@ -87,45 +94,47 @@ class Peer:
     async def _listen(
         self,
     ):
+        self._logger.debug('listening begin')
         while True:
             event = await self.transport.read()
-            match event:
-                case domain.AcceptEvent():
-                    await self._acknowledge(event)
-                    try:
-                        self.pending_accept_events.complete(event.features.sourceID, event)
-                    except shared.PendingNotFound:
-                        print('pending accept event not found')
-                case domain.ReplyEvent():
-                    await self._acknowledge(event)
-                    try:
-                        self.pending_reply_events.complete(event.features.invocationID, event)
-                    except shared.PendingNotFound:
-                        print('pending reply event not found')
-                case domain.PublishEvent():
-                    await self._acknowledge(event)
-                    self._loop.create_task(
-                        self.incoming_publish_events.produce(event)
-                    )
-                case domain.CallEvent():
-                    await self._acknowledge(event)
-                    self._loop.create_task(
-                        self.incoming_call_events.produce(event)
-                    )
-                case domain.NextEvent():
-                    await self._acknowledge(event)
-                    try:
-                        self.pending_next_events.complete(event.features.yieldID, event)
-                    except shared.PendingNotFound:
-                        print('pending next event not found')
-                case domain.CancelEvent():
-                    await self._acknowledge(event)
-                    try:
-                        self.pending_cancel_events.complete(event.features.invocationID, event)
-                    except shared.PendingNotFound:
-                        print('pending cancel event not found')
-                case _:
-                    print('invalid event', event)
+            self._logger.debug('new', event=event)
+            if isinstance(event, domain.AcceptEvent):
+                await self._acknowledge(event)
+                try:
+                    self.pending_accept_events.complete(event.features.sourceID, event)
+                except shared.PendingNotFound:
+                    self._logger.error('pending accept event not found', event=event)
+            elif isinstance(event, domain.ReplyEvent):
+                await self._acknowledge(event)
+                try:
+                    self.pending_reply_events.complete(event.features.invocationID, event)
+                except shared.PendingNotFound:
+                    self._logger.error('pending reply event not found', event=event)
+            elif isinstance(event, domain.PublishEvent):
+                await self._acknowledge(event)
+                self._loop.create_task(
+                    self.incoming_publish_events.produce(event)
+                )
+            elif isinstance(event, domain.CallEvent):
+                await self._acknowledge(event)
+                self._loop.create_task(
+                    self.incoming_call_events.produce(event)
+                )
+            elif isinstance(event, domain.NextEvent):
+                await self._acknowledge(event)
+                try:
+                    self.pending_next_events.complete(event.features.yieldID, event)
+                except shared.PendingNotFound:
+                    self._logger.error('pending next event not found', event=event)
+            elif isinstance(event, domain.CancelEvent):
+                await self._acknowledge(event)
+                try:
+                    self.pending_cancel_events.complete(event.features.invocationID, event)
+                except shared.PendingNotFound:
+                    self._logger.error('pending cancel event not found', event=event)
+            else:
+                self._logger.error('invalid event', event=event)
+        self._logger.debug('listening end')
 
     def listen(
         self,

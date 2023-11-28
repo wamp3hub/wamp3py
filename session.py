@@ -1,104 +1,101 @@
+import inspect
 import typing
 
 import domain
+import entrypoints
 import endpoints
-import peer
+import logger
 import shared
 
 
-@shared.Domain
-class NewResourcePayload:
-    ID: str = shared.field(default_factory=shared.new_id)
-    URI: str
-    options: domain.RegisterOptions
+if typing.TYPE_CHECKING:
+    import peer
 
 
-@shared.Domain
-class NewGeneratorPayload:
-    ID: str = shared.field(default_factory=shared.new_id)
+SECOND = 1000000000
+DEFAULT_TIMEOUT = 60 * SECOND
 
 
-class Session:
-    """
-    """
+class RemoteGenerator:
+
+    ID: str
+
+    @property
+    def active(self) -> bool:
+        return not self._done
 
     def __init__(
         self,
-        peer: peer.Peer,
+        router: 'peer.Peer',
+        yield_event: domain.YieldEvent,
     ):
-        self._peer = peer
-        self._peer.incoming_publish_events.consume(self._on_publish)
-        self._peer.incoming_call_events.consume(self._on_call)
-        self._subscriptions = {}
-        self._registrations = {}
+        self._done = False
+        self._router = router
+        self._last_yield_event = yield_event
+        self._logger = logger
+        payload = shared.load(domain.NewGeneratorPayload, yield_event.payload)
+        self.ID = payload.ID
 
-    async def _on_publish(
-        self,
-        publish_event: domain.PublishEvent,
-    ):
-        """
-        """
-        endpoint = self._subscriptions.get(publish_event.route.endpointID)
-        if endpoint is None:
-            print('EndpointNotFound')
-        else:
-            await endpoint(publish_event)
-
-    async def _on_yield(
-        self,
-        call_event: domain.CallEvent,
-        endpoint: endpoints.GeneratorEndpoint,
-    ):
-        """
-        """
-        yield_event = await endpoint.execute(call_event)
-        pending_stop_event = self._peer.pending_cancel_events.new(yield_event.payload.ID)
-
-        while generator.active:
-            pending_next_event = self._peer.pending_next_events.new(yield_event.ID)
-            await self._peer.send(yield_event)
-            [something], [pending] = await shared.select_first(
-                pending_next_event,
-                pending_stop_event,
-            )
-            match something:
-                case next_event if domain.NextEvent():
-                    pending_yield_event = generator.next(next_event)
-                    [something], [pending] = await shared.select_first(
-                        pending_yield_event,
-                        pending_stop_event,
-                    )
-                    match something:
-                        case domain.CancelEvent():
-                            pending.cancel()
-                case domain.CancelEvent():
-                    pending.cancel()
-
-    async def _on_call(
-        self,
-        call_event: domain.CallEvent,
-    ):
-        """
-        """
-        pending_cancel_event = self._peer.pending_cancel_events.new(call_event.ID)
-
-        endpoint = self._registrations.get(call_event.route.endpointID)
-        if endpoint is None:
-            print('EndpointNotFound')
-        elif endpoint.is_generator:
-            await self._on_yield(call_event, endpoint)
-
-        [something], [pending] = await shared.select_first(
-            endpoint.execute(call_event),
-            pending_cancel_event,
+    async def stop(self):
+        self._done = True
+        stop_event = domain.StopEvent(
+            features=domain.ReplyFeatures(invocationID=self.ID),
         )
-        match something:
-            case reply_event if domain.ReplyEvent():
-                pending.cancel()
-                await self._peer.send(reply_event)
-                await self._on_yield(call_event, something)
-            case domain.CancelEvent():
-                pending.cancel()
+        await self._router.send(stop_event)
+
+    async def next(
+        self,
+        timeout = DEFAULT_TIMEOUT,
+    ) -> domain.YieldEvent | domain.ReplyEvent:
+        self._done = True
+        next_event = domain.NextEvent(
+            features=domain.NextFeatures(
+                yieldID=self._last_yield_event.ID,
+                timeout=timeout,
+            ),
+        )
+        pending_yield_event = self._router.pending_reply_events.new(next_event.ID)
+        await self._router.send(next_event)
+        response = await pending_yield_event
+        if isinstance(response, domain.ErrorEvent):
+            if response.payload.message == 'GeneratorExit':
+                raise StopAsyncIteration()
+            raise Exception(response.payload.message)
+        if isinstance(response, domain.YieldEvent):
+            self._last_yield_event = response
+            self._done = False
+        return response
+
+    def __aiter__(self):
+        return self
+
+    async def __anext__(self):
+        return await self.next()
+
+
+class Session:
+
+    def __init__(
+        self,
+        router: 'peer.Peer',
+    ):
+        self._router = router
+        self._entrypoints = {}
+        self._logger = logger
+
+        async def on_event(event: domain.PublishEvent | domain.CallEvent):
+            entrypoint = self._entrypoints.get(event.route.endpointID)
+            if entrypoint is None:
+                self._logger.error('EntrypointNotFound', event=event)
+                raise Exception('EntrypointNotFound')
+
+            try:
+                await entrypoint.execute(self._router, event)
+            except Exception as e:
+                self._logger.error('SomethingWentWrong', exception=repr(e), event=event)
+
+        self._router.incoming_publish_events.consume(on_event)
+        self._router.incoming_call_events.consume(on_event)
 
     async def publish(
         self,
@@ -114,14 +111,14 @@ class Session:
                 URI=URI,
             ),
         )
-        await self._peer.send(publish_event)
+        await self._router.send(publish_event)
 
     async def call(
         self,
         URI: str,
         payload: typing.Any,
-        timeout: int = 60,
-    ) -> domain.ReplyEvent:
+        timeout: int = DEFAULT_TIMEOUT,
+    ) -> domain.ReplyEvent | RemoteGenerator:
         """
         """
         call_event = domain.CallEvent(
@@ -132,12 +129,14 @@ class Session:
                 timeout=timeout,
             ),
         )
-        pending_reply_event = self._peer.pending_reply_events.new(call_event.ID)
-        await self._peer.send(call_event)
-        reply_event = await pending_reply_event
-        if isinstance(reply_event, domain.ErrorEvent):
-            raise Exception(reply_event.payload.message)
-        return reply_event
+        pending_reply_event = self._router.pending_reply_events.new(call_event.ID)
+        await self._router.send(call_event)
+        response = await pending_reply_event
+        if isinstance(response, domain.ErrorEvent):
+            raise Exception(response.payload.message)
+        if isinstance(response, domain.YieldEvent):
+            return RemoteGenerator(self._router, response)
+        return response
 
     async def subscribe(
         self,
@@ -147,10 +146,12 @@ class Session:
     ) -> domain.Subscription:
         """
         """
-        payload = NewResourcePayload(URI=URI, options=options)
-        replyEvent = await self.call("wamp.router.subscribe", payload)
-        subscription = shared.load(domain.Subscription, replyEvent.payload)
-        self._subscriptions[subscription.ID] = procedure
+        payload = domain.NewResourcePayload(URI=URI, options=options)
+        reply_event = await self.call("wamp.router.subscribe", payload)
+        subscription = shared.load(domain.Subscription, reply_event.payload)
+        endpoint = endpoints.PublishEventEndpoint(procedure)
+        entrypoint = entrypoints.PublishEventEntrypoint(endpoint)
+        self._entrypoints[subscription.ID] = entrypoint
         return subscription
 
     async def register(
@@ -161,10 +162,16 @@ class Session:
     ) -> domain.Registration:
         """
         """
-        payload = NewResourcePayload(URI=URI, options=options)
-        replyEvent = await self.call("wamp.router.register", payload)
-        registration = shared.load(domain.Registration, replyEvent.payload)
-        self._registrations[registration.ID] = procedure
+        payload = domain.NewResourcePayload(URI=URI, options=options)
+        reply_event = await self.call("wamp.router.register", payload)
+        registration = shared.load(domain.Registration, reply_event.payload)
+        if inspect.isasyncgenfunction(procedure):
+            endpoint = endpoints.PieceByPieceEndpoint(procedure)
+            entrypoint = entrypoints.PieceByPieceEntrypoint(endpoint)
+        else:
+            endpoint = endpoints.CallEventEndpoint(procedure)
+            entrypoint = entrypoints.CallEventEntrypoint(endpoint)
+        self._entrypoints[registration.ID] = entrypoint
         return registration
 
     async def unsubscribe(
@@ -176,7 +183,7 @@ class Session:
         try:
             await self.call("wamp.router.unsubscribe", subscription_id)
         finally:
-            self._registrations.pop(subscription_id)
+            self._entrypoints.pop(subscription_id)
 
     async def unregister(
         self,
@@ -187,7 +194,7 @@ class Session:
         try:
             await self.call("wamp.router.unregister", registration_id)
         finally:
-            self._registrations.pop(registration_id)
+            self._entrypoints.pop(registration_id)
 
     async def leave(
         self,
@@ -195,4 +202,4 @@ class Session:
     ):
         """
         """
-        await self._peer.close()
+        await self._router.close()

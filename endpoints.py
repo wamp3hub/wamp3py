@@ -1,116 +1,97 @@
-import asyncio
-import inspect
 import typing
 
 import domain
 import logger
+import shared
 
-
-CallProcedure = typing.Callable
 
 PublishProcedure = typing.Callable
 
+CallProcedure = typing.Callable
+
 
 class endpoint:
-    """
-    """
 
     def __init__(
         self,
-        procedure: CallProcedure,
+        procedure: typing.Callable,
     ):
-        self._procedure = procedure
+        self.procedure = procedure
+        self._logger = logger
 
 
-class PublishEndpoint(endpoint):
-    """
-    """
+class PublishEventEndpoint(endpoint):
 
     async def execute(
         self,
         publish_event: domain.PublishEvent,
     ):
         try:
-            await self._procedure(publish_event)
+            await self.procedure(publish_event)
         except Exception as e:
-            logger.error('PublishError', exception=repr(e))
+            self._logger.error('Publish', exception=repr(e))
 
 
-class CallEndpoint(endpoint):
-    """
-    """
+class CallEventEndpoint(endpoint):
 
     async def execute(
         self,
         call_event: domain.CallEvent,
     ) -> domain.ReplyEvent | domain.ErrorEvent:
+        reply_features = domain.ReplyFeatures(invocationID=call_event.ID)
         try:
-            async with asyncio.timeout(call_event.features.timeout):
-                payload = await self._procedure(call_event)
-                reply_event = domain.ReplyEvent(
-                    features=domain.ReplyFeatures(invocationID=call_event.ID),
-                    payload=payload,
-                )
-                return reply_event
-        # except asyncio.TimeoutError:
-        #     logger.error('CallTimedout')
-        #     error_event = domain.ErrorEvent(
-        #         features=domain.ReplyFeatures(invocationID=call_event.ID),
-        #         payload=domain.ErrorEventPayload(message='Timedout'),
-        #     )
-        #     return error_event
-        # except asyncio.CancelledError:
-        #     logger.error('CallCancelled')
-        #     error_event = domain.ErrorEvent(
-        #         features=domain.ReplyFeatures(invocationID=call_event.ID),
-        #         payload=domain.ErrorEventPayload(message='Cancelled'),
-        #     )
-        #     return error_event
+            payload = await self.procedure(call_event)
+            return domain.ReplyEvent(features=reply_features, payload=payload)
         except Exception as e:
-            logger.error('CallError', exception=repr(e))
-            error_event = domain.ErrorEvent(
-                features=domain.ReplyFeatures(invocationID=call_event.ID),
-                payload=domain.ErrorEventPayload(message=repr(e)),
+            self._logger.error('call', exception=repr(e))
+            return domain.ErrorEvent(
+                features=reply_features, payload=domain.ErrorEventPayload(message=repr(e)),
             )
-            return error_event
 
 
-class GeneratorEndpoint(endpoint):
-    """
-    """
+class PieceByPiece:
+
+    ID: str
+
+    @property
+    def active(self) -> bool:
+        return not self._done
+
+    def __init__(
+        self,
+        generator
+    ):
+        self.ID = shared.new_id()
+        self._done = False
+        self._generator = generator
+        self._logger = logger
+
+    async def next(
+        self,
+        next_event: domain.NextEvent,
+    ) -> domain.YieldEvent | domain.ReplyEvent | domain.ErrorEvent:
+        reply_features = domain.ReplyFeatures(invocationID=next_event.ID)
+        try:
+            payload = await anext(self._generator)
+            return domain.YieldEvent(features=reply_features, payload=payload)
+        except (StopIteration, StopAsyncIteration):
+            self._done = True
+            return domain.ErrorEvent(
+                features=reply_features, payload=domain.ErrorEventPayload(message='GeneratorExit'),
+            )
+        except Exception as e:
+            self._logger.error('next', exception=repr(e))
+            self._done = True
+            return domain.ErrorEvent(
+                features=reply_features, payload=domain.ErrorEventPayload(message=repr(e)),
+            )
+
+
+class PieceByPieceEndpoint(endpoint):
 
     async def execute(
         self,
         call_event: domain.CallEvent,
-    ) -> domain.YieldEvent:
-        self._generator = await self._procedure(call_event)
-        yield_event = domain.YieldEvent(
-            features=domain.ReplyFeatures(invocationID=call_event.ID),
-            payload=NewGeneratorPayload(),
-        )
-        return yield_event
-
-    @property
-    def active(self) -> bool:
-        return True
-
-    async def next(
-        self,
-        next_event: domain.NextEvent
-    ) -> domain.YieldEvent | domain.ReplyEvent | domain.ErrorEvent:
-        try:
-            async with asyncio.timeout(next_event.features.timeout):
-                payload = await anext(self._generator, next_event)
-                yield_event = domain.YieldEvent(
-                    features=domain.ReplyFeatures(invocationID=next_event.ID),
-                    payload=payload,
-                )
-                return yield_event
-        except Exception as e:
-            logger.error('NextError', exception=repr(e))
-            error_event = domain.ErrorEvent(
-                features=domain.ReplyFeatures(invocationID=next_event.ID),
-                payload=domain.ErrorEventPayload(message=repr(e)),
-            )
-            return error_event
-
+    ) -> PieceByPiece:
+        generator = self.procedure(call_event)
+        return PieceByPiece(generator)

@@ -1,7 +1,16 @@
 import asyncio
 
 
-async def select_first(*awaitables):
+async def select_first(
+    *awaitables,
+    __cancel_pending=True,
+):
     __awaitables = [asyncio.ensure_future(i) for i in awaitables]
     done, pending = await asyncio.wait(__awaitables, return_when=asyncio.FIRST_COMPLETED)
-    return {i.result() for i in done}, pending
+    if __cancel_pending:
+        for task in pending:
+            task.cancel()
+    for task in done:
+        result = task.result()
+        return result
+

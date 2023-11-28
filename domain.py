@@ -134,6 +134,9 @@ class NextEvent(Event):
     features: NextFeatures
 
 
+StopEvent = CancelEvent
+
+
 @shared.Domain
 class options:
     route: list[str] = shared.field(default_factory=list)
@@ -164,3 +167,15 @@ class Registration(resource):
 @shared.Domain
 class Subscription(resource):
     options: SubscribeOptions
+
+
+@shared.Domain
+class NewResourcePayload:
+    ID: str = shared.field(default_factory=shared.new_id)
+    URI: str
+    options: RegisterOptions | SubscribeOptions
+
+
+@shared.Domain
+class NewGeneratorPayload:
+    ID: str

@@ -4,9 +4,9 @@ import logging
 __super = logging.getLogger('wamp')
 
 
-def log(message, **kwargs):
+def debug(message, **kwargs):
     v = {'message': message, **kwargs}
-    __super.info(v)
+    __super.debug(v)
 
 
 def error(message, **kwargs):

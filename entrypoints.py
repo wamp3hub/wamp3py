@@ -1,26 +1,26 @@
 import typing
 
 import domain
+import endpoints
 import shared
 
 
 if typing.TYPE_CHECKING:
-    import endpoints
     import peer
 
 
 class entrypoint:
-
-    def __init__(
-        self,
-        endpoint,
-    ):
-        self.endpoint = endpoint
+    """
+    """
 
 
 class PublishEventEntrypoint(entrypoint):
 
-    endpoint: 'endpoints.PublishEventEndpoint'
+    def __init__(
+        self,
+        procedure,
+    ):
+        self.endpoint = endpoints.PublishEventEndpoint(procedure)
 
     async def execute(
         self,
@@ -32,7 +32,11 @@ class PublishEventEntrypoint(entrypoint):
 
 class CallEventEntrypoint(entrypoint):
 
-    endpoint: 'endpoints.CallEventEndpoint'
+    def __init__(
+        self,
+        procedure,
+    ):
+        self.endpoint = endpoints.CallEventEndpoint(procedure)
 
     async def execute(
         self,
@@ -52,7 +56,11 @@ class CallEventEntrypoint(entrypoint):
 
 class PieceByPieceEntrypoint(entrypoint):
 
-    endpoint: 'endpoints.PieceByPieceEndpoint'
+    def __init__(
+        self,
+        procedure,
+    ):
+        self.endpoint = endpoints.PieceByPieceEndpoint(procedure)
 
     async def execute(
         self,

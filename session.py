@@ -3,12 +3,12 @@ import typing
 
 import domain
 import entrypoints
-import endpoints
 import logger
 import shared
 
 
 if typing.TYPE_CHECKING:
+    import endpoints
     import peer
 
 
@@ -66,11 +66,11 @@ class RemoteGenerator:
             self._done = False
         return response
 
-    def __aiter__(self):
-        return self
-
     async def __anext__(self):
         return await self.next()
+
+    def __aiter__(self):
+        return self
 
 
 class Session:
@@ -94,8 +94,8 @@ class Session:
             except Exception as e:
                 self._logger.error('SomethingWentWrong', exception=repr(e), event=event)
 
-        self._router.incoming_publish_events.consume(on_event)
-        self._router.incoming_call_events.consume(on_event)
+        self._router.incoming_publish_events.observe(on_event)
+        self._router.incoming_call_events.observe(on_event)
 
     async def publish(
         self,
@@ -142,15 +142,14 @@ class Session:
         self,
         URI: str,
         options: domain.SubscribeOptions,
-        procedure: endpoints.PublishProcedure,
+        procedure: 'endpoints.PublishProcedure',
     ) -> domain.Subscription:
         """
         """
         payload = domain.NewResourcePayload(URI=URI, options=options)
         reply_event = await self.call("wamp.router.subscribe", payload)
         subscription = shared.load(domain.Subscription, reply_event.payload)
-        endpoint = endpoints.PublishEventEndpoint(procedure)
-        entrypoint = entrypoints.PublishEventEntrypoint(endpoint)
+        entrypoint = entrypoints.PublishEventEntrypoint(procedure)
         self._entrypoints[subscription.ID] = entrypoint
         return subscription
 
@@ -158,7 +157,7 @@ class Session:
         self,
         URI: str,
         options: domain.RegisterOptions,
-        procedure: endpoints.CallProcedure,
+        procedure: 'endpoints.CallProcedure',
     ) -> domain.Registration:
         """
         """
@@ -166,11 +165,9 @@ class Session:
         reply_event = await self.call("wamp.router.register", payload)
         registration = shared.load(domain.Registration, reply_event.payload)
         if inspect.isasyncgenfunction(procedure):
-            endpoint = endpoints.PieceByPieceEndpoint(procedure)
-            entrypoint = entrypoints.PieceByPieceEntrypoint(endpoint)
+            entrypoint = entrypoints.PieceByPieceEntrypoint(procedure)
         else:
-            endpoint = endpoints.CallEventEndpoint(procedure)
-            entrypoint = entrypoints.CallEventEntrypoint(endpoint)
+            entrypoint = entrypoints.CallEventEntrypoint(procedure)
         self._entrypoints[registration.ID] = entrypoint
         return registration
 

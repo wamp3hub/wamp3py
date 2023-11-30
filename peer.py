@@ -41,8 +41,8 @@ class Transport(typing.Protocol):
 class Peer:
 
     transport: Transport
-    incoming_publish_events: shared.Stream
-    incoming_call_events: shared.Stream
+    incoming_publish_events: shared.Observable
+    incoming_call_events: shared.Observable
     pending_accept_events: shared.PendingMap
     pending_reply_events: shared.PendingMap
     pending_next_events: shared.PendingMap
@@ -53,8 +53,8 @@ class Peer:
         transport: Transport,
     ):
         self.transport = transport
-        self.incoming_publish_events = shared.Stream()
-        self.incoming_call_events = shared.Stream()
+        self.incoming_publish_events = shared.Observable()
+        self.incoming_call_events = shared.Observable()
         self.pending_accept_events = shared.PendingMap()
         self.pending_reply_events = shared.PendingMap()
         self.pending_next_events = shared.PendingMap()
@@ -113,12 +113,12 @@ class Peer:
             elif isinstance(event, domain.PublishEvent):
                 await self._acknowledge(event)
                 self._loop.create_task(
-                    self.incoming_publish_events.produce(event)
+                    self.incoming_publish_events.next(event)
                 )
             elif isinstance(event, domain.CallEvent):
                 await self._acknowledge(event)
                 self._loop.create_task(
-                    self.incoming_call_events.produce(event)
+                    self.incoming_call_events.next(event)
                 )
             elif isinstance(event, domain.NextEvent):
                 await self._acknowledge(event)

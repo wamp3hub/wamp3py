@@ -1,4 +1,4 @@
-from .concurrency import select_first
+from .concurrency import race
 from .domain import Domain, load, dump, field
 from .new_id import new_id
 from .pending_map import PendingMap, PendingNotFound

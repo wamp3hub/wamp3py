@@ -9,65 +9,46 @@ if typing.TYPE_CHECKING:
     import peer
 
 
-class entrypoint:
-    """
-    """
-
-
-class PublishEventEntrypoint(entrypoint):
-
-    def __init__(
-        self,
-        procedure,
-    ):
-        self.endpoint = endpoints.PublishEventEndpoint(procedure)
+def PublishEventEntrypoint(procedure):
+    endpoint = endpoints.PublishEventEndpoint(procedure)
 
     async def execute(
-        self,
         router: 'peer.Peer',
-        publish_event: domain.PublishEvent,
+        publish_event: domain.PublishEvent
     ):
-        await self.endpoint.execute(publish_event)
+        await endpoint(publish_event)
+
+    return execute
 
 
-class CallEventEntrypoint(entrypoint):
-
-    def __init__(
-        self,
-        procedure,
-    ):
-        self.endpoint = endpoints.CallEventEndpoint(procedure)
+def CallEventEntrypoint(procedure):
+    endpoint = endpoints.CallEventEndpoint(procedure)
 
     async def execute(
-        self,
         router: 'peer.Peer',
         call_event: domain.CallEvent,
     ):
         pending_cancel_event = router.pending_cancel_events.new(call_event.ID)
 
-        something = await shared.select_first(
-            self.endpoint.execute(call_event),
+        something = await shared.race(
+            endpoint(call_event),
             pending_cancel_event,
         )
 
         if not isinstance(something, domain.CancelEvent):
             await router.send(something)
 
+    return execute
 
-class PieceByPieceEntrypoint(entrypoint):
 
-    def __init__(
-        self,
-        procedure,
-    ):
-        self.endpoint = endpoints.PieceByPieceEndpoint(procedure)
+def PieceByPieceEntrypoint(procedure):
+    endpoint = endpoints.PieceByPieceEndpoint(procedure)
 
     async def execute(
-        self,
         router: 'peer.Peer',
         call_event: domain.CallEvent,
     ):
-        generator = await self.endpoint.execute(call_event)
+        generator = await endpoint(call_event)
 
         pending_stop_event = router.pending_cancel_events.new(generator.ID)
 
@@ -81,7 +62,7 @@ class PieceByPieceEntrypoint(entrypoint):
 
             await router.send(yield_event)
 
-            something = await shared.select_first(
+            something = await shared.race(
                 pending_next_event,
                 pending_stop_event,
                 __cancel_pending=False,
@@ -91,7 +72,7 @@ class PieceByPieceEntrypoint(entrypoint):
                 pending_next_event.cancel()
                 break
 
-            something = await shared.select_first(
+            something = await shared.race(
                 generator.next(something),
                 pending_stop_event,
                 __cancel_pending=False,
@@ -103,4 +84,6 @@ class PieceByPieceEntrypoint(entrypoint):
 
             if not isinstance(something, domain.StopEvent):
                 await router.send(something)
+
+    return execute
 

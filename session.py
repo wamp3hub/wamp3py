@@ -90,7 +90,7 @@ class Session:
                 raise Exception('EntrypointNotFound')
 
             try:
-                await entrypoint.execute(self._router, event)
+                await entrypoint(self._router, event)
             except Exception as e:
                 self._logger.error('SomethingWentWrong', exception=repr(e), event=event)
 
@@ -101,6 +101,9 @@ class Session:
         self,
         URI: str,
         payload: typing.Any,
+        /,
+        include,
+        exclude,
     ) -> domain.PublishEvent:
         """
         """
@@ -117,6 +120,7 @@ class Session:
         self,
         URI: str,
         payload: typing.Any,
+        /,
         timeout: int = DEFAULT_TIMEOUT,
     ) -> domain.ReplyEvent | RemoteGenerator:
         """

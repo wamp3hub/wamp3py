@@ -1,7 +1,7 @@
 import asyncio
 
 
-async def select_first(
+async def race(
     *awaitables,
     __cancel_pending=True,
 ):

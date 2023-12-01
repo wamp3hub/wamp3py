@@ -10,43 +10,29 @@ PublishProcedure = typing.Callable
 CallProcedure = typing.Callable
 
 
-class endpoint:
-
-    def __init__(
-        self,
-        procedure: typing.Callable,
-    ):
-        self.procedure = procedure
-        self._logger = logger
-
-
-class PublishEventEndpoint(endpoint):
-
-    async def execute(
-        self,
-        publish_event: domain.PublishEvent,
-    ):
+def PublishEventEndpoint(procedure):
+    async def execute(publish_event: domain.PublishEvent):
         try:
-            await self.procedure(publish_event)
+            await procedure(publish_event)
         except Exception as e:
-            self._logger.error('Publish', exception=repr(e))
+            logger.error('Publish', exception=repr(e))
+
+    return execute
 
 
-class CallEventEndpoint(endpoint):
-
-    async def execute(
-        self,
-        call_event: domain.CallEvent,
-    ) -> domain.ReplyEvent | domain.ErrorEvent:
+def CallEventEndpoint(procedure):
+    async def execute(call_event: domain.CallEvent) -> domain.ReplyEvent | domain.ErrorEvent:
         reply_features = domain.ReplyFeatures(invocationID=call_event.ID)
         try:
-            payload = await self.procedure(call_event)
+            payload = await procedure(call_event)
             return domain.ReplyEvent(features=reply_features, payload=payload)
         except Exception as e:
-            self._logger.error('call', exception=repr(e))
+            logger.error('call', exception=repr(e))
             return domain.ErrorEvent(
                 features=reply_features, payload=domain.ErrorEventPayload(message=repr(e)),
             )
+
+    return execute
 
 
 class PieceByPiece:
@@ -87,11 +73,10 @@ class PieceByPiece:
             )
 
 
-class PieceByPieceEndpoint(endpoint):
-
-    async def execute(
-        self,
-        call_event: domain.CallEvent,
-    ) -> PieceByPiece:
-        generator = self.procedure(call_event)
+def PieceByPieceEndpoint(procedure):
+    async def execute(call_event: domain.CallEvent) -> PieceByPiece:
+        generator = procedure(call_event)
         return PieceByPiece(generator)
+
+    return execute
+

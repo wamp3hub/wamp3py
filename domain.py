@@ -179,3 +179,7 @@ class NewResourcePayload:
 @shared.Domain
 class NewGeneratorPayload:
     ID: str
+
+
+class ApplicationError(Exception):
+    ...

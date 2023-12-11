@@ -5,9 +5,9 @@ import logger
 import shared
 
 
-PublishProcedure = typing.Callable
+ProcedureToSubscribe = typing.Callable
 
-CallProcedure = typing.Callable
+ProcedureToRegister = typing.Callable
 
 
 def PublishEventEndpoint(procedure):
@@ -15,7 +15,7 @@ def PublishEventEndpoint(procedure):
         try:
             await procedure(publish_event)
         except Exception as e:
-            logger.error('Publish', exception=repr(e))
+            logger.error('during execute publish event endpoint', exception=repr(e))
 
     return execute
 
@@ -27,7 +27,7 @@ def CallEventEndpoint(procedure):
             payload = await procedure(call_event)
             return domain.ReplyEvent(features=reply_features, payload=payload)
         except Exception as e:
-            logger.error('call', exception=repr(e))
+            logger.error('during execute call event endpoint', exception=repr(e))
             return domain.ErrorEvent(
                 features=reply_features, payload=domain.ErrorEventPayload(message=repr(e)),
             )
@@ -50,7 +50,6 @@ class PieceByPiece:
         self.ID = shared.new_id()
         self._done = False
         self._generator = generator
-        self._logger = logger
 
     async def next(
         self,
@@ -61,12 +60,13 @@ class PieceByPiece:
             payload = await anext(self._generator)
             return domain.YieldEvent(features=reply_features, payload=payload)
         except (StopIteration, StopAsyncIteration):
+            logger.debug('generator done')
             self._done = True
             return domain.ErrorEvent(
                 features=reply_features, payload=domain.ErrorEventPayload(message='GeneratorExit'),
             )
         except Exception as e:
-            self._logger.error('next', exception=repr(e))
+            logger.error('during anext', exception=repr(e))
             self._done = True
             return domain.ErrorEvent(
                 features=reply_features, payload=domain.ErrorEventPayload(message=repr(e)),

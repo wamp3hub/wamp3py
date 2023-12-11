@@ -12,8 +12,7 @@ if typing.TYPE_CHECKING:
     import peer
 
 
-SECOND = 1000000000
-DEFAULT_TIMEOUT = 60 * SECOND
+DEFAULT_TIMEOUT = 60
 
 
 class RemoteGenerator:
@@ -146,7 +145,7 @@ class Session:
         self,
         URI: str,
         options: domain.SubscribeOptions,
-        procedure: 'endpoints.PublishProcedure',
+        procedure: 'endpoints.ProcedureToSubscribe',
     ) -> domain.Subscription:
         """
         """
@@ -161,7 +160,7 @@ class Session:
         self,
         URI: str,
         options: domain.RegisterOptions,
-        procedure: 'endpoints.CallProcedure',
+        procedure: 'endpoints.ProcedureToRegister',
     ) -> domain.Registration:
         """
         """

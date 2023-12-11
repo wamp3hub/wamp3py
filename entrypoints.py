@@ -2,6 +2,7 @@ import typing
 
 import domain
 import endpoints
+import logger
 import shared
 
 
@@ -16,6 +17,8 @@ def PublishEventEntrypoint(procedure):
         router: 'peer.Peer',
         publish_event: domain.PublishEvent
     ):
+        logger.debug('publish')
+
         await endpoint(publish_event)
 
     return execute
@@ -28,6 +31,8 @@ def CallEventEntrypoint(procedure):
         router: 'peer.Peer',
         call_event: domain.CallEvent,
     ):
+        logger.debug('call')
+
         pending_cancel_event = router.pending_cancel_events.new(call_event.ID)
 
         something = await shared.race(
@@ -36,6 +41,7 @@ def CallEventEntrypoint(procedure):
         )
 
         if not isinstance(something, domain.CancelEvent):
+            pending_cancel_event.cancel()
             await router.send(something)
 
     return execute
@@ -48,6 +54,8 @@ def PieceByPieceEntrypoint(procedure):
         router: 'peer.Peer',
         call_event: domain.CallEvent,
     ):
+        logger.debug('call piece by piece')
+
         generator = await endpoint(call_event)
 
         pending_stop_event = router.pending_cancel_events.new(generator.ID)
@@ -57,7 +65,8 @@ def PieceByPieceEntrypoint(procedure):
             payload=domain.NewGeneratorPayload(ID=generator.ID),
         )
 
-        while generator.active:
+        active = True
+        while active:
             pending_next_event = router.pending_next_events.new(yield_event.ID)
 
             await router.send(yield_event)
@@ -83,7 +92,10 @@ def PieceByPieceEntrypoint(procedure):
                 continue
 
             if not isinstance(something, domain.StopEvent):
+                pending_stop_event.cancel()
                 await router.send(something)
+
+            active = False
 
     return execute
 

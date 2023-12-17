@@ -4,6 +4,21 @@ import typing
 import shared
 
 
+class ApplicationError(Exception):
+    """
+    if you want to display error messages to user,
+    you must derive your exception from this class.
+    """
+
+    message: str
+
+    def __init__(
+        self,
+        message: str,
+    ) -> None:
+        self.message = message
+
+
 class MessageKinds(enum.auto):
     Call = 127
     Cancel = 126
@@ -13,11 +28,6 @@ class MessageKinds(enum.auto):
     Yield = -125
     Error = -126
     Reply = -127
-
-
-CallProcedure = typing.Callable
-
-PublishProcedure = typing.Callable
 
 
 @shared.Domain
@@ -34,7 +44,7 @@ class eventRoute:
 
 @shared.Domain
 class Event:
-    ID: str
+    ID: str = shared.field(default_factory=shared.new_id)
 
 
 @shared.Domain
@@ -113,7 +123,7 @@ class ReplyEvent(Event):
 
 @shared.Domain
 class ErrorEventPayload:
-    code: str
+    message: str
 
 
 @shared.Domain
@@ -130,12 +140,16 @@ class YieldEvent(ReplyEvent):
 @shared.Domain
 class NextFeatures(eventFeatures):
     yieldID: str
+    timeout: int
 
 
 @shared.Domain
 class NextEvent(Event):
     kind: int = MessageKinds.Next
     features: NextFeatures
+
+
+StopEvent = CancelEvent
 
 
 @shared.Domain

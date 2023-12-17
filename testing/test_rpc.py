@@ -1,26 +1,26 @@
 import pytest
 
-import source
+import wamp3py
 
 
 @pytest.fixture
 async def session():
-    return await source.websocket_join(
+    return await wamp3py.websocket_join(
         'localhost:8888',
         False,
-        source.DefaultSerializer,
+        wamp3py.DefaultSerializer,
         None
     )
 
 
-class InvalidName(source.ApplicationError):
+class InvalidName(wamp3py.ApplicationError):
     """
     Invalid name
     """
 
 
 async def greeting(
-    call_event: source.CallEvent,
+    call_event: wamp3py.CallEvent,
 ):
     name = call_event.payload
     if len(name) > 0:
@@ -29,7 +29,7 @@ async def greeting(
 
 
 
-async def test_rpc(session: source.Session):
+async def test_rpc(session: wamp3py.Session):
     # test regsiter
     await session.register('net.example.greeting', greeting)
 

@@ -33,9 +33,9 @@ Homepage = 'https://github.com/wamp3hub/wamp3py'
 Documentation = "https://wamp3hub.github.io/documentation"
 
 [tool.hatch.build.targets.wheel]
-packages = ["source/"]
+packages = ["wamp3py/"]
 
 [tool.pytest.ini_options]
 testpaths = "testing"
-pythonpath = "source/"
+pythonpath = "wamp3py/"
 asyncio_mode = "auto"

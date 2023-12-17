@@ -1,9 +1,9 @@
 import asyncio
 import typing
 
-import domain
-import logger
-import shared
+from . import domain
+from . import logger
+from . import shared
 
 
 class SerializationFail(Exception):

@@ -2,10 +2,10 @@ import typing
 
 import websockets
 
-import domain
-import peer
-import session
-import transports.interview
+from . import interview
+from .. import domain
+from .. import peer
+from .. import session
 
 
 class WSTransport:
@@ -52,7 +52,7 @@ async def websocket_join(
     serializer: peer.Serializer,
     credentials: typing.Any,
 ) -> session.Session:
-    payload = await transports.interview.http2interview(address, secure, credentials)
+    payload = await interview.http2interview(address, secure, credentials)
     transport = await websocket_connect(address, secure, payload.ticket, serializer)
     router = peer.Peer(transport)
     __session = session.Session(router)

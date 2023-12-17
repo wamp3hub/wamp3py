@@ -1,9 +1,9 @@
 import typing
 
-import domain
-import endpoints
-import logger
-import shared
+from . import domain
+from . import endpoints
+from . import logger
+from . import shared
 
 
 if typing.TYPE_CHECKING:

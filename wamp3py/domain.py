@@ -1,7 +1,7 @@
 import enum
 import typing
 
-import shared
+from . import shared
 
 
 class ApplicationError(Exception):

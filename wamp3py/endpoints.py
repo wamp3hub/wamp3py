@@ -1,8 +1,8 @@
 import typing
 
-import domain
-import logger
-import shared
+from . import domain
+from . import logger
+from . import shared
 
 
 type ProcedureToSubscribe = typing.Callable[[domain.PublishEvent], typing.Awaitable[None]]

@@ -1,4 +1,4 @@
-from domain import (
+from .domain import (
     ApplicationError,
     CallEvent,
     PublishEvent,
@@ -8,19 +8,19 @@ from domain import (
     Subscription,
     Registration,
 )
-from peer import (
+from .peer import (
     SerializationFail,
     Serializer,
     Transport,
 )
-from session import (
+from .session import (
     Session,
     RemoteGenerator,
 )
-from serializers import (
+from .serializers import (
     JSONSerializer,
     DefaultSerializer,
 )
-from transports import (
+from .transports import (
     websocket_join,
 )

@@ -1,8 +1,8 @@
 import json
 
-import domain
-import peer
-import shared
+from .. import domain
+from .. import peer
+from .. import shared
 
 
 class JSONSerializer:

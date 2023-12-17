@@ -1,15 +1,15 @@
 import inspect
 import typing
 
-import domain
-import entrypoints
-import logger
-import shared
+from . import domain
+from . import entrypoints
+from . import logger
+from . import shared
 
 
 if typing.TYPE_CHECKING:
-    import endpoints
-    import peer
+    from . import endpoints
+    from . import peer
 
 
 DEFAULT_TIMEOUT = 60

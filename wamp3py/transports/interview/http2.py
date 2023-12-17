@@ -2,7 +2,7 @@ import typing
 
 import httpx
 
-import shared
+from ... import shared
 
 
 class InterviewFail(Exception):

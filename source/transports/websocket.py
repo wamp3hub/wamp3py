@@ -54,7 +54,7 @@ async def websocket_join(
 ) -> session.Session:
     payload = await transports.interview.http2interview(address, secure, credentials)
     transport = await websocket_connect(address, secure, payload.ticket, serializer)
-    __peer = peer.Peer(transport)
-    __session = session.Session(__peer)
-    await __peer.listen()
+    router = peer.Peer(transport)
+    __session = session.Session(router)
+    await router.listen()
     return __session

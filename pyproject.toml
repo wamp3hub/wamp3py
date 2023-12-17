@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "wamp3py"
-version = "0.4.3"
+version = "0.4.32"
 description = "Python client for WAMP"
 authors = [
     {name = "Aidar Turkenov", email = "a.k.turken0v@gmail.com"},

@@ -1,0 +1,41 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "wamp3py"
+version = "0.4.1"
+description = "Python client for WAMP"
+authors = [
+    {name = "Aidar Turkenov", email = "a.k.turken0v@gmail.com"},
+]
+readme = "README.md"
+license = { file = "LICENSE" }
+classifiers = [
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3",
+    "Topic :: Internet",
+]
+keywords = ["wamp"]
+dependencies = [
+    "dacite==1.8.1",
+    "httpx==0.25.2",
+    "websockets==12.0",
+]
+requires-python = ">=3.12"
+
+[project.optional-dependencies]
+dev = ["isort", "pytest", "pytest-asyncio"]
+
+[project.urls]
+Homepage = 'https://github.com/wamp3hub/wamp3py'
+Documentation = "https://wamp3hub.github.io/documentation"
+
+[tool.hatch.build.targets.wheel]
+packages = ["source/"]
+
+[tool.pytest.ini_options]
+testpaths = "testing"
+pythonpath = "source/"
+asyncio_mode = "auto"

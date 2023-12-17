@@ -6,6 +6,7 @@ from . import interview
 from .. import domain
 from .. import peer
 from .. import session
+from .. import serializers
 
 
 class WSTransport:
@@ -48,9 +49,9 @@ async def websocket_connect(
 
 async def websocket_join(
     address: str,
-    secure: bool,
-    serializer: peer.Serializer,
     credentials: typing.Any,
+    secure: bool = False,
+    serializer: peer.Serializer = serializers.DefaultSerializer,
 ) -> session.Session:
     payload = await interview.http2interview(address, secure, credentials)
     transport = await websocket_connect(address, secure, payload.ticket, serializer)

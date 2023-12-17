@@ -5,27 +5,55 @@ from . import logger
 from . import shared
 
 
-type ProcedureToSubscribe = typing.Callable[[domain.PublishEvent], typing.Awaitable[None]]
+class ProcedureToSubscribe[I](typing.Protocol):
+    async def __call__(
+        self,
+        payload: I,
+        /,
+        event_id: str,
+        event_features: domain.PublishFeatures,
+        event_route: domain.PublishRoute,
+    ) -> None:
+        ...
 
 
 def PublishEventEndpoint(procedure: ProcedureToSubscribe):
     async def execute(publish_event: domain.PublishEvent):
         try:
-            await procedure(publish_event)
+            await procedure(
+                publish_event.payload,
+                event_id=publish_event.ID,
+                event_features=publish_event.features,
+                event_route=publish_event.route,
+            )
         except Exception as e:
             logger.error('during execute publish event endpoint', exception=repr(e))
 
     return execute
 
 
-type ProcedureToRegister[T] = typing.Callable[[domain.PublishEvent], typing.Awaitable[T] | typing.AwaitableGenerator[T]]
+class ProcedureToRegister[I, O](typing.Protocol):
+    async def __call__(
+        self,
+        payload: I,
+        /,
+        event_id: str,
+        event_features: domain.CallFeatures,
+        event_route: domain.CallRoute,
+    ) -> O:
+        ...
 
 
 def CallEventEndpoint(procedure: ProcedureToRegister):
     async def execute(call_event: domain.CallEvent) -> domain.ReplyEvent | domain.ErrorEvent:
         reply_features = domain.ReplyFeatures(invocationID=call_event.ID)
         try:
-            payload = await procedure(call_event)
+            payload = await procedure(
+                call_event.payload,
+                event_id=call_event.ID,
+                event_features=call_event.features,
+                event_route=call_event.route,
+            )
             return domain.ReplyEvent(features=reply_features, payload=payload)
         except domain.ApplicationError as e:
             return domain.ErrorEvent(
@@ -87,7 +115,12 @@ class PieceByPiece:
 
 def PieceByPieceEndpoint(procedure: ProcedureToRegister):
     async def execute(call_event: domain.CallEvent) -> PieceByPiece:
-        generator = procedure(call_event)
+        generator = procedure(
+            call_event.payload,
+            event_id=call_event.ID,
+            event_features=call_event.features,
+            event_route=call_event.route,
+        )
         return PieceByPiece(generator)
 
     return execute

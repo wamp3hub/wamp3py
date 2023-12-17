@@ -7,9 +7,7 @@ import wamp3py
 async def session():
     return await wamp3py.websocket_join(
         'localhost:8888',
-        False,
-        wamp3py.DefaultSerializer,
-        None
+        credentials=None,
     )
 
 
@@ -20,9 +18,9 @@ class InvalidName(wamp3py.ApplicationError):
 
 
 async def greeting(
-    call_event: wamp3py.CallEvent,
+    name: str,
+    **kwargs,
 ):
-    name = call_event.payload
     if len(name) > 0:
         return f"Hello, {name}!"
     raise InvalidName()

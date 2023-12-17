@@ -49,6 +49,7 @@ async def websocket_connect(
 
 async def websocket_join(
     address: str,
+    /,
     credentials: typing.Any,
     secure: bool = False,
     serializer: peer.Serializer = serializers.DefaultSerializer,

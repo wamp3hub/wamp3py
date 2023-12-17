@@ -32,7 +32,7 @@ class RemoteGenerator:
         self._router = router
         self._last_yield_event = yield_event
         self._logger = logger
-        payload = shared.load(domain.NewGeneratorPayload, yield_event.payload)
+        payload = entrypoints.NewGeneratorPayload(**yield_event.payload)
         self.ID = payload.ID
 
     async def stop(self):
@@ -59,7 +59,7 @@ class RemoteGenerator:
         if isinstance(response, domain.ErrorEvent):
             if response.payload.message == 'GeneratorExit':
                 raise StopAsyncIteration()
-            raise Exception(response.payload.message)
+            raise domain.ApplicationError(response.payload.message)
         if isinstance(response, domain.YieldEvent):
             self._last_yield_event = response
             self._done = False
@@ -70,6 +70,13 @@ class RemoteGenerator:
 
     def __aiter__(self):
         return self
+
+
+@shared.Domain
+class NewResourcePayload:
+    ID: str = shared.field(default_factory=shared.new_id)
+    URI: str
+    options: domain.RegisterOptions | domain.SubscribeOptions
 
 
 class Session:
@@ -86,7 +93,8 @@ class Session:
             entrypoint = self._entrypoints.get(event.route.endpointID)
             if entrypoint is None:
                 self._logger.error('EntrypointNotFound', event=event)
-                raise Exception('EntrypointNotFound')
+                # TODO
+                return
 
             try:
                 await entrypoint(self._router, event)
@@ -99,18 +107,24 @@ class Session:
     async def publish(
         self,
         URI: str,
-        payload: typing.Any,
+        payload,
         /,
-        include,
-        exclude,
-    ) -> domain.PublishEvent:
+        include: list[str] = None,
+        exclude: list[str] = None,
+    ) -> None:
         """
         """
+        if include is None:
+            include = []
+        if exclude is None:
+            exclude = []
         publish_event = domain.PublishEvent(
             ID=shared.new_id(),
             payload=payload,
             features=domain.PublishFeatures(
                 URI=URI,
+                include=include,
+                exclude=exclude,
             ),
         )
         await self._router.send(publish_event)
@@ -118,7 +132,7 @@ class Session:
     async def call(
         self,
         URI: str,
-        payload: typing.Any,
+        payload,
         /,
         timeout: int = DEFAULT_TIMEOUT,
     ) -> domain.ReplyEvent | RemoteGenerator:
@@ -136,7 +150,7 @@ class Session:
         await self._router.send(call_event)
         response = await pending_reply_event
         if isinstance(response, domain.ErrorEvent):
-            raise Exception(response.payload.message)
+            raise domain.ApplicationError(response.payload.message)
         if isinstance(response, domain.YieldEvent):
             return RemoteGenerator(self._router, response)
         return response
@@ -144,12 +158,12 @@ class Session:
     async def subscribe(
         self,
         URI: str,
-        options: domain.SubscribeOptions,
         procedure: 'endpoints.ProcedureToSubscribe',
+        **options: domain.SubscribeOptions,
     ) -> domain.Subscription:
         """
         """
-        payload = domain.NewResourcePayload(URI=URI, options=options)
+        payload = NewResourcePayload(URI=URI, options=options)
         reply_event = await self.call("wamp.router.subscribe", payload)
         subscription = shared.load(domain.Subscription, reply_event.payload)
         entrypoint = entrypoints.PublishEventEntrypoint(procedure)
@@ -159,12 +173,12 @@ class Session:
     async def register(
         self,
         URI: str,
-        options: domain.RegisterOptions,
         procedure: 'endpoints.ProcedureToRegister',
+        **options: domain.RegisterOptions,
     ) -> domain.Registration:
         """
         """
-        payload = domain.NewResourcePayload(URI=URI, options=options)
+        payload = NewResourcePayload(URI=URI, options=options)
         reply_event = await self.call("wamp.router.register", payload)
         registration = shared.load(domain.Registration, reply_event.payload)
         if inspect.isasyncgenfunction(procedure):
@@ -202,4 +216,5 @@ class Session:
     ):
         """
         """
+        # TODO send goodbye
         await self._router.close()

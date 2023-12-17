@@ -26,7 +26,7 @@ class PendingMap:
         self,
         key: str,
         value: str,
-    ):
+    ) -> None:
         """
         """
         future = self._futures.get(key)

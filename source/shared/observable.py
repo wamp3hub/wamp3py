@@ -2,22 +2,26 @@ import asyncio
 import typing
 
 
-class Observer:
-    next: typing.Callable
-    complete: typing.Callable | None
+type NextFunction[T] = typing.Callable[[T], None]
+type CompleteFunction[T] = typing.Callable[[T], None]
 
 
-class Observable:
+class Observer[T]:
+    next: NextFunction[T]
+    complete: CompleteFunction[T] | None
 
-    _observers: typing.List[Observer]
+
+class Observable[T]:
+
+    _observers: typing.List[Observer[T]]
 
     def __init__(self):
         self._observers = []
 
     def observe(
         self,
-        next: typing.Callable,
-        complete: typing.Callable = None,
+        next: NextFunction[T],
+        complete: CompleteFunction[T] | None = None,
     ) -> Observer:
         observer = Observer()
         observer.next = next

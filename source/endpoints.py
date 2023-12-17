@@ -5,12 +5,10 @@ import logger
 import shared
 
 
-ProcedureToSubscribe = typing.Callable
-
-ProcedureToRegister = typing.Callable
+type ProcedureToSubscribe = typing.Callable[[domain.PublishEvent], typing.Awaitable[None]]
 
 
-def PublishEventEndpoint(procedure):
+def PublishEventEndpoint(procedure: ProcedureToSubscribe):
     async def execute(publish_event: domain.PublishEvent):
         try:
             await procedure(publish_event)
@@ -20,12 +18,19 @@ def PublishEventEndpoint(procedure):
     return execute
 
 
-def CallEventEndpoint(procedure):
+type ProcedureToRegister[T] = typing.Callable[[domain.PublishEvent], typing.Awaitable[T] | typing.AwaitableGenerator[T]]
+
+
+def CallEventEndpoint(procedure: ProcedureToRegister):
     async def execute(call_event: domain.CallEvent) -> domain.ReplyEvent | domain.ErrorEvent:
         reply_features = domain.ReplyFeatures(invocationID=call_event.ID)
         try:
             payload = await procedure(call_event)
             return domain.ReplyEvent(features=reply_features, payload=payload)
+        except domain.ApplicationError as e:
+            return domain.ErrorEvent(
+                features=reply_features, payload=domain.ErrorEventPayload(message=e.message),
+            )
         except Exception as e:
             logger.error('during execute call event endpoint', exception=repr(e))
             return domain.ErrorEvent(
@@ -54,26 +59,33 @@ class PieceByPiece:
     async def next(
         self,
         next_event: domain.NextEvent,
-    ) -> domain.YieldEvent | domain.ReplyEvent | domain.ErrorEvent:
+    ) -> domain.YieldEvent | domain.ErrorEvent:
         reply_features = domain.ReplyFeatures(invocationID=next_event.ID)
+        self._done = True
         try:
             payload = await anext(self._generator)
+            self._done = False
             return domain.YieldEvent(features=reply_features, payload=payload)
         except (StopIteration, StopAsyncIteration):
             logger.debug('generator done')
-            self._done = True
             return domain.ErrorEvent(
                 features=reply_features, payload=domain.ErrorEventPayload(message='GeneratorExit'),
             )
+        except domain.ApplicationError as e:
+            return domain.ErrorEvent(
+                features=reply_features, payload=domain.ErrorEventPayload(message=e.message),
+            )
         except Exception as e:
-            logger.error('during anext', exception=repr(e))
-            self._done = True
+            logger.error('during next', exception=repr(e))
             return domain.ErrorEvent(
                 features=reply_features, payload=domain.ErrorEventPayload(message=repr(e)),
             )
 
+    async def stop(self):
+        raise NotImplemented()
 
-def PieceByPieceEndpoint(procedure):
+
+def PieceByPieceEndpoint(procedure: ProcedureToRegister):
     async def execute(call_event: domain.CallEvent) -> PieceByPiece:
         generator = procedure(call_event)
         return PieceByPiece(generator)

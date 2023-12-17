@@ -1,28 +1,26 @@
 import pytest
 
-import domain
-import serializers
-import transports
+import source
 
 
 @pytest.fixture
 async def session():
-    return await transports.websocket_join(
+    return await source.websocket_join(
         'localhost:8888',
         False,
-        serializers.JSONSerializer(),
+        source.DefaultSerializer,
         None
     )
 
 
-class InvalidName(domain.ApplicationError):
+class InvalidName(source.ApplicationError):
     """
     Invalid name
     """
 
 
 async def greeting(
-    call_event: domain.CallEvent,
+    call_event: source.CallEvent,
 ):
     name = call_event.payload
     if len(name) > 0:
@@ -31,9 +29,9 @@ async def greeting(
 
 
 
-async def test_rpc(session):
+async def test_rpc(session: source.Session):
     # test regsiter
-    await session.register('net.example.greeting', domain.RegisterOptions(), greeting)
+    await session.register('net.example.greeting', greeting)
 
     # test call
     reply_event = await session.call('net.example.greeting', 'World')
@@ -45,7 +43,7 @@ async def test_rpc(session):
     except Exception as e:
         print(e)
     else:
-        raise Exception('Expected exception')
+        raise Exception('Expected exception InvalidName')
 
     # test cancel
 

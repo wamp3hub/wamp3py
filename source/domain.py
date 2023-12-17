@@ -4,6 +4,21 @@ import typing
 import shared
 
 
+class ApplicationError(Exception):
+    """
+    if you want to display error messages to user,
+    you must derive your exception from this class.
+    """
+
+    message: str
+
+    def __init__(
+        self,
+        message: str,
+    ) -> None:
+        self.message = message
+
+
 class MessageKinds(enum.auto):
     Call = 127
     Cancel = 126
@@ -167,19 +182,3 @@ class Registration(resource):
 @shared.Domain
 class Subscription(resource):
     options: SubscribeOptions
-
-
-@shared.Domain
-class NewResourcePayload:
-    ID: str = shared.field(default_factory=shared.new_id)
-    URI: str
-    options: RegisterOptions | SubscribeOptions
-
-
-@shared.Domain
-class NewGeneratorPayload:
-    ID: str
-
-
-class ApplicationError(Exception):
-    ...

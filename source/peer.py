@@ -6,6 +6,11 @@ import logger
 import shared
 
 
+class SerializationFail(Exception):
+    """
+    """
+
+
 class Serializer(typing.Protocol):
 
     def encode(
@@ -41,8 +46,8 @@ class Transport(typing.Protocol):
 class Peer:
 
     transport: Transport
-    incoming_publish_events: shared.Observable
-    incoming_call_events: shared.Observable
+    incoming_publish_events: shared.Observable[domain.PublishEvent]
+    incoming_call_events: shared.Observable[domain.CallEvent]
     pending_accept_events: shared.PendingMap
     pending_reply_events: shared.PendingMap
     pending_next_events: shared.PendingMap
@@ -99,7 +104,6 @@ class Peer:
             event = await self.transport.read()
             self._logger.debug('new', event=event)
             if isinstance(event, domain.AcceptEvent):
-                await self._acknowledge(event)
                 try:
                     self.pending_accept_events.complete(event.features.sourceID, event)
                 except shared.PendingNotFound:

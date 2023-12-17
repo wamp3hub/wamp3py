@@ -1,6 +1,7 @@
 import json
 
 import domain
+import peer
 import shared
 
 
@@ -11,7 +12,7 @@ class JSONSerializer:
         event: domain.Event,
     ) -> bytes:
         if not isinstance(event, domain.Event):
-            raise Exception('InvalidEvent')
+            raise peer.SerializationFail('InvalidEvent')
         raw_event = shared.dump(event)
         message = json.dumps(raw_event)
         return message
@@ -39,6 +40,6 @@ class JSONSerializer:
             case domain.MessageKinds.Cancel:
                 event = shared.load(domain.CancelEvent, raw_event)
             case _:
-                raise Exception('InvalidEvent')
+                raise peer.SerializationFail('InvalidEvent')
         return event
 

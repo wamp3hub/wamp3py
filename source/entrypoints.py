@@ -47,6 +47,11 @@ def CallEventEntrypoint(procedure):
     return execute
 
 
+@shared.Domain
+class NewGeneratorPayload:
+    ID: str
+
+
 def PieceByPieceEntrypoint(procedure):
     endpoint = endpoints.PieceByPieceEndpoint(procedure)
 
@@ -62,7 +67,7 @@ def PieceByPieceEntrypoint(procedure):
 
         yield_event = domain.YieldEvent(
             features=domain.ReplyFeatures(invocationID=call_event.ID),
-            payload=domain.NewGeneratorPayload(ID=generator.ID),
+            payload=NewGeneratorPayload(ID=generator.ID),
         )
 
         active = True

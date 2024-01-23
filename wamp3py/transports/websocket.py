@@ -2,11 +2,14 @@ import typing
 
 import websockets
 
-from . import interview
 from .. import domain
+from .. import logger
 from .. import peer
 from .. import session
 from .. import serializers
+from .. import shared
+from . import interview
+from . import reconnectable
 
 
 class WSTransport:
@@ -17,7 +20,7 @@ class WSTransport:
     async def write(
         self,
         event: domain.Event
-    ):
+    ) -> None:
         message = self.serializer.encode(event)
         await self.connection.send(message)
 
@@ -26,25 +29,42 @@ class WSTransport:
         event = self.serializer.decode(message)
         return event
 
-    async def close(self):
+    async def close(self) -> None:
         await self.connection.close()
 
 
 async def websocket_connect(
     address: str,
-    secure: bool,
     ticket: str,
-    serializer: peer.Serializer,
-) -> WSTransport:
+    secure: bool = False,
+    serializer: peer.Serializer = serializers.DefaultSerializer,
+    reconnection_strategy: shared.RetryStrategy = shared.DefaultRetryStrategy,
+) -> peer.Transport:
     protocol = 'ws'
     if secure:
         protocol = 'wss'
+
     url = f'{protocol}://{address}/wamp/v1/websocket?ticket={ticket}'
-    connection = await websockets.connect(url)
-    transport = WSTransport()
-    transport.connection = connection
-    transport.serializer = serializer
-    return transport
+
+    async def connect() -> WSTransport:
+        connection = await websockets.connect(url)
+        transport = WSTransport()
+        transport.connection = connection
+        transport.serializer = serializer
+        return transport
+
+    try:
+        transport = await connect()
+    except Exception as e:
+        logger.error('during connect', exception=repr(e))
+        raise peer.ConnectionClosed()
+
+    instance = reconnectable.ReconnectableTransport(
+        transport=transport,
+        connect=connect,
+        strategy=reconnection_strategy,
+    )
+    return instance
 
 
 async def websocket_join(
@@ -53,10 +73,21 @@ async def websocket_join(
     credentials: typing.Any,
     secure: bool = False,
     serializer: peer.Serializer = serializers.DefaultSerializer,
+    reconnection_strategy: shared.RetryStrategy = shared.DefaultRetryStrategy,
 ) -> session.Session:
-    payload = await interview.http2interview(address, secure, credentials)
-    transport = await websocket_connect(address, secure, payload.ticket, serializer)
+    payload = await interview.http2interview(
+        address=address, 
+        secure=secure,
+        credentials=credentials,
+    )
+    transport = await websocket_connect(
+        address=address,
+        secure=secure,
+        ticket=payload.ticket,
+        serializer=serializer,
+        reconnection_strategy=reconnection_strategy,
+    )
     router = peer.Peer(transport)
-    __session = session.Session(router)
+    instance = session.Session(router)
     await router.listen()
-    return __session
+    return instance

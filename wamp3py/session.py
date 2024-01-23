@@ -18,25 +18,21 @@ DEFAULT_TIMEOUT = 60
 class RemoteGenerator:
 
     ID: str
-
-    @property
-    def active(self) -> bool:
-        return not self._done
+    active: bool
 
     def __init__(
         self,
         router: 'peer.Peer',
         yield_event: domain.YieldEvent,
     ):
-        self._done = False
+        self.active = True
         self._router = router
         self._last_yield_event = yield_event
-        self._logger = logger
         payload = entrypoints.NewGeneratorPayload(**yield_event.payload)
         self.ID = payload.ID
 
     async def stop(self):
-        self._done = True
+        self.active = False
         stop_event = domain.StopEvent(
             features=domain.ReplyFeatures(invocationID=self.ID),
         )
@@ -46,7 +42,7 @@ class RemoteGenerator:
         self,
         timeout = DEFAULT_TIMEOUT,
     ) -> domain.YieldEvent | domain.ReplyEvent:
-        self._done = True
+        self.active = False
         next_event = domain.NextEvent(
             features=domain.NextFeatures(
                 yieldID=self._last_yield_event.ID,
@@ -62,7 +58,7 @@ class RemoteGenerator:
             raise domain.ApplicationError(response.payload.message)
         if isinstance(response, domain.YieldEvent):
             self._last_yield_event = response
-            self._done = False
+            self.active = True
         return response
 
     async def __anext__(self):
@@ -87,22 +83,33 @@ class Session:
     ):
         self._router = router
         self._entrypoints = {}
-        self._logger = logger
+        self._restores = {}
 
         async def on_event(event: domain.PublishEvent | domain.CallEvent):
             entrypoint = self._entrypoints.get(event.route.endpointID)
             if entrypoint is None:
-                self._logger.error('EntrypointNotFound', event=event)
-                # TODO
+                logger.error('entrypoint not found', event=event)
                 return
 
             try:
                 await entrypoint(self._router, event)
             except Exception as e:
-                self._logger.error('SomethingWentWrong', exception=repr(e), event=event)
+                logger.error('something went wrong', exception=repr(e), event=event)
 
         self._router.incoming_publish_events.observe(on_event)
         self._router.incoming_call_events.observe(on_event)
+
+        async def rejoin(_):
+            logger.warn('rejoining...')
+            for restore in self._restores.values():
+                await restore()
+
+        async def on_leave():
+            logger.warn('leaving...')
+            self._restores = {}
+            self._entrypoints = {}
+
+        self._router.rejoin_events.observe(rejoin, on_leave)
 
     async def publish(
         self,
@@ -166,8 +173,16 @@ class Session:
         payload = NewResourcePayload(URI=URI, options=options)
         reply_event = await self.call("wamp.router.subscribe", payload)
         subscription = shared.load(domain.Subscription, reply_event.payload)
+
+        async def restore():
+            self._entrypoints.pop(subscription.ID)
+            await self.subscribe(URI, procedure, **options)
+
+        self._restores[subscription.ID] = restore
+
         entrypoint = entrypoints.PublishEventEntrypoint(procedure)
         self._entrypoints[subscription.ID] = entrypoint
+
         return subscription
 
     async def register(
@@ -181,11 +196,19 @@ class Session:
         payload = NewResourcePayload(URI=URI, options=options)
         reply_event = await self.call("wamp.router.register", payload)
         registration = shared.load(domain.Registration, reply_event.payload)
+
+        async def restore():
+            self._entrypoints.pop(registration.ID)
+            await self.register(URI, procedure, **options)
+
+        self._restores[registration.ID] = restore
+
         if inspect.isasyncgenfunction(procedure):
             entrypoint = entrypoints.PieceByPieceEntrypoint(procedure)
         else:
             entrypoint = entrypoints.CallEventEntrypoint(procedure)
         self._entrypoints[registration.ID] = entrypoint
+
         return registration
 
     async def unsubscribe(
@@ -198,6 +221,7 @@ class Session:
             await self.call("wamp.router.unsubscribe", subscription_id)
         finally:
             self._entrypoints.pop(subscription_id)
+            self._restores.pop(subscription_id)
 
     async def unregister(
         self,
@@ -209,6 +233,7 @@ class Session:
             await self.call("wamp.router.unregister", registration_id)
         finally:
             self._entrypoints.pop(registration_id)
+            self._restores.pop(registration_id)
 
     async def leave(
         self,

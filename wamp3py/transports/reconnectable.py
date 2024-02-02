@@ -18,12 +18,11 @@ class ReconnectableTransport:
 
     async def __init__(
         self,
-        transport: peer.Transport,
         connect: typing.Callable,
         strategy: shared.RetryStrategy = shared.DefaultRetryStrategy,
     ) -> None:
         self.connect = connect
-        self._base = transport
+        self._base: peer.Transport
         self._reading = asyncio.Lock()
         self._writing = asyncio.Lock()
         self._strategy = strategy
@@ -41,16 +40,7 @@ class ReconnectableTransport:
     async def close(self) -> None:
         await self._base.close()
 
-    async def _hot_swap(
-        self,
-        new: peer.Transport,
-    ) -> None:
-        await self._pause()
-        await self.close()
-        self._base = new
-        await self._resume()
-
-    async def _reconnect(self) -> None:
+    async def reconnect(self) -> None:
         if self._strategy.attempt_number == 0:
             await self._pause()
 
@@ -60,29 +50,36 @@ class ReconnectableTransport:
             logger.error('retry attempts exceeded')
             raise peer.ConnectionClosed()
 
-        logger.debug(f'waiting {sleep_duration} seconds before reconnecting')
-        await asyncio.sleep(sleep_duration)
+        if sleep_duration > 0:
+            logger.debug(f'waiting {sleep_duration} seconds before reconnecting')
+            await asyncio.sleep(sleep_duration)
 
         try:
-            logger.warn('reconnecting...')
-            new = await self.connect()
+            logger.warn('connecting...')
+            new_transport = await self.connect()
         except Exception as e:
             logger.error('during connect', exception=repr(e))
-            self._reconnect()
+            await self.reconnect()
         else:
-            logger.debug('successfully reconnected')
-            await self._hot_swap(new)
-            raise peer.ConnectionRestored()
+            logger.debug('successfully connected')
+            self._strategy.reset()
 
-    async def _safe_read(self) -> None:
+            # close previous transport
+            await self.close()
+            self._base = new_transport
+
+            await self._resume()
+
+    async def _safe_read(self) -> domain.Event:
         async with self._reading:
             return await self._base.read()
 
-    async def read(self) -> domain.Event:
+    async def read(self) -> domain.Event:  # type: ignore
         try:
             return await self._safe_read()
         except BadConnection:
-            self._reconnect()
+            await self.reconnect()
+            raise peer.ConnectionRestored()
 
     async def _safe_write(
         self,
@@ -96,4 +93,3 @@ class ReconnectableTransport:
         event: domain.Event
     ) -> None:
         await self._safe_write(event)
-

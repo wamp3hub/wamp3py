@@ -6,7 +6,7 @@ class PendingNotFound(Exception):
     """
 
 
-class PendingMap:
+class PendingMap[T]:
 
     def __init__(self):
         self._futures = {}
@@ -25,7 +25,7 @@ class PendingMap:
     def complete(
         self,
         key: str,
-        value: str,
+        value: T,
     ) -> None:
         """
         """

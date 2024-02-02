@@ -1,3 +1,4 @@
+from functools import partial
 import typing
 
 import websockets
@@ -33,6 +34,17 @@ class WSTransport:
         await self.connection.close()
 
 
+async def __connect(
+    url: str,
+    serializer: peer.Serializer,
+) -> WSTransport:
+    connection = await websockets.connect(url)
+    transport = WSTransport()
+    transport.connection = connection
+    transport.serializer = serializer
+    return transport
+
+
 async def websocket_connect(
     address: str,
     ticket: str,
@@ -46,24 +58,16 @@ async def websocket_connect(
 
     url = f'{protocol}://{address}/wamp/v1/websocket?ticket={ticket}'
 
-    async def connect() -> WSTransport:
-        connection = await websockets.connect(url)
-        transport = WSTransport()
-        transport.connection = connection
-        transport.serializer = serializer
-        return transport
-
+    instance = reconnectable.ReconnectableTransport(
+        connect=partial(__connect, url=url, serializer=serializer),
+        strategy=reconnection_strategy,
+    )
     try:
-        transport = await connect()
+        await instance.reconnect()
     except Exception as e:
         logger.error('during connect', exception=repr(e))
         raise peer.ConnectionClosed()
 
-    instance = reconnectable.ReconnectableTransport(
-        transport=transport,
-        connect=connect,
-        strategy=reconnection_strategy,
-    )
     return instance
 
 

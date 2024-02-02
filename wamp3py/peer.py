@@ -37,7 +37,7 @@ class Serializer(typing.Protocol):
 
     def decode(
         self,
-        data: bytes,
+        message: bytes | str,
     ) -> domain.Event:
         """
         """
@@ -49,38 +49,32 @@ class Transport(typing.Protocol):
         """
         """
 
-    async def write(self, event: domain.Event):
+    async def write(self, event: domain.Event) -> None:
         """
         """        
 
-    async def close(self):
+    async def close(self) -> None:
         """
         """
 
 
 class Peer:
-
-    transport: Transport
-    rejoin_events: shared.Observable[bool]
-    incoming_publish_events: shared.Observable[domain.PublishEvent]
-    incoming_call_events: shared.Observable[domain.CallEvent]
-    pending_accept_events: shared.PendingMap
-    pending_reply_events: shared.PendingMap
-    pending_next_events: shared.PendingMap
-    pending_cancel_events: shared.PendingMap
+    """
+    Peer must be initialized inside running event loop!
+    """
 
     def __init__(
         self,
         transport: Transport,
     ):
         self.transport = transport
-        self.rejoin_events = shared.Observable()
-        self.incoming_publish_events = shared.Observable()
-        self.incoming_call_events = shared.Observable()
-        self.pending_accept_events = shared.PendingMap()
-        self.pending_reply_events = shared.PendingMap()
-        self.pending_next_events = shared.PendingMap()
-        self.pending_cancel_events = shared.PendingMap()
+        self.rejoin_events: shared.Observable[bool] = shared.Observable()
+        self.incoming_publish_events: shared.Observable[domain.PublishEvent] = shared.Observable()
+        self.incoming_call_events: shared.Observable[domain.CallEvent] = shared.Observable()
+        self.pending_accept_events: shared.PendingMap[domain.AcceptEvent] = shared.PendingMap()
+        self.pending_reply_events: shared.PendingMap[domain.ReplyEvent] = shared.PendingMap()
+        self.pending_next_events: shared.PendingMap[domain.NextEvent] = shared.PendingMap()
+        self.pending_cancel_events: shared.PendingMap[domain.CancelEvent] = shared.PendingMap()
         self._loop = asyncio.get_running_loop()
 
     async def send(
@@ -94,10 +88,12 @@ class Peer:
         try:
             pending_accept_event = self.pending_accept_events.new(event.ID)
             await self.transport.write(event)
+            logger.debug('event successfully sent', event=event)
             await pending_accept_event
-            logger.debug('sent', event=event)
-        except:
-            self.send(event, resend_count - 1)
+            logger.debug('event successfully delivered', event=event)
+        except Exception as e:
+            logger.error('during send event', exception=repr(e))
+            await self.send(event, resend_count - 1)
 
     async def _acknowledge(
         self,
@@ -112,25 +108,26 @@ class Peer:
             try:
                 await self.transport.write(accept_event)
                 break
+
             except Exception as e:
                 logger.error('during acknowledge', exception=repr(e))
 
-    async def _listen(
+    async def _read_incoming_events(
         self,
     ):
-        logger.debug('listening begin')
+        logger.debug('reading begin')
         while True:
             try:
                 event = await self.transport.read()
             except ConnectionRestored:
                 logger.debug('connection restored')
-                self.rejoin_events.next(True)
+                await self.rejoin_events.next(True)
                 continue
             except ConnectionClosed:
                 logger.debug('connection closed')
                 break
 
-            logger.debug('new', event=event)
+            logger.debug('new incoming event', event=event)
 
             if isinstance(event, domain.AcceptEvent):
                 try:
@@ -168,18 +165,18 @@ class Peer:
             else:
                 logger.error('invalid event', event=event)
 
-        self.incoming_call_events.complete()
-        self.incoming_publish_events.complete()
-        self.rejoin_events.complete()
-        logger.debug('listening end')
+        await self.incoming_call_events.complete()
+        await self.incoming_publish_events.complete()
+        await self.rejoin_events.complete()
+        logger.debug('reading end')
 
-    def listen(
+    async def listen(
         self,
     ):
         self._loop.create_task(
-            self._listen()
+            self._read_incoming_events()
         )
-        asyncio.sleep(0)
+        await asyncio.sleep(0)
 
     async def close(
         self,

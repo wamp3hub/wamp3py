@@ -116,8 +116,8 @@ class Session:
         URI: str,
         payload,
         /,
-        include: list[str] = None,
-        exclude: list[str] = None,
+        include: list[str] | None = None,
+        exclude: list[str] | None = None,
     ) -> None:
         """
         """

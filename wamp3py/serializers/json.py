@@ -19,7 +19,7 @@ class JSONSerializer:
 
     def decode(
         self,
-        message: bytes,
+        message: bytes | str,
     ) -> domain.Event:
         raw_event = json.loads(message)
         match raw_event['kind']:

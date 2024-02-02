@@ -71,7 +71,7 @@ class BackoffRS(ConstantRS):
 
     def next(self) -> int:
         d = super().next()
-        v = self._factor ** (self.attempt_number - 1) + d
+        v = self._factor ** (self.attempt_number - 1) - 1 + d
         if v > self._upper_bound:
             v = self._upper_bound
         return round(v)

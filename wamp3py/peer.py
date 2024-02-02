@@ -65,8 +65,10 @@ class Peer:
 
     def __init__(
         self,
+        ID: str,
         transport: Transport,
     ):
+        self.ID = ID
         self.transport = transport
         self.rejoin_events: shared.Observable[bool] = shared.Observable()
         self.incoming_publish_events: shared.Observable[domain.PublishEvent] = shared.Observable()

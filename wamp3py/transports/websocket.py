@@ -91,7 +91,7 @@ async def websocket_join(
         serializer=serializer,
         reconnection_strategy=reconnection_strategy,
     )
-    router = peer.Peer(transport)
+    router = peer.Peer(payload.yourID, transport)
     instance = session.Session(router)
     await router.listen()
     return instance

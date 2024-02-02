@@ -111,6 +111,10 @@ class Session:
 
         self._router.rejoin_events.observe(rejoin, on_leave)
 
+    @property
+    def ID(self) -> str:
+        return self._router.ID
+
     async def publish(
         self,
         URI: str,

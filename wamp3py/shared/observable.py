@@ -2,13 +2,13 @@ import asyncio
 import typing
 
 
-type NextFunction[T] = typing.Callable[[T], None]
-type CompleteFunction[T] = typing.Callable[[T], None]
+type NextFunction[T] = typing.Callable[[T], typing.Coroutine]
+type CompleteFunction = typing.Callable[[], typing.Coroutine]
 
 
 class Observer[T]:
     next: NextFunction[T]
-    complete: CompleteFunction[T] | None
+    complete: CompleteFunction | None
 
 
 class Observable[T]:
@@ -21,13 +21,15 @@ class Observable[T]:
     def observe(
         self,
         next: NextFunction[T],
-        complete: CompleteFunction[T] | None = None,
+        complete: CompleteFunction | None = None,
     ) -> Observer:
         observer = Observer()
         observer.next = next
         observer.complete = complete
         self._observers.append(observer)
+        return observer
 
+    # FIXME must be sync
     async def next(
         self,
         *args,
@@ -38,6 +40,7 @@ class Observable[T]:
                 coro = observer.next(*args, **kwargs)
                 tg.create_task(coro)
 
+    # FIXME must be sync
     async def complete(
         self,
         *args,

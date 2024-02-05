@@ -3,11 +3,10 @@ import typing
 from . import domain
 from . import endpoints
 from . import logger
-from . import shared
 
 
 if typing.TYPE_CHECKING:
-    import peer
+    from . import peer
 
 
 def PublishEventEntrypoint(procedure):
@@ -15,7 +14,7 @@ def PublishEventEntrypoint(procedure):
 
     async def execute(
         router: 'peer.Peer',
-        publish_event: domain.PublishEvent
+        publish_event: domain.Publication
     ):
         logger.debug('publish')
 
@@ -29,27 +28,26 @@ def CallEventEntrypoint(procedure):
 
     async def execute(
         router: 'peer.Peer',
-        call_event: domain.CallEvent,
+        call_event: domain.Invocation,
     ):
         logger.debug('call')
 
-        pending_cancel_event = router.pending_cancel_events.new(call_event.ID)
+        pending_response = endpoint(call_event)
 
-        something = await shared.race(
-            endpoint(call_event),
-            pending_cancel_event,
+        pending_cancel_event = router.pending_cancel_events.new(call_event['ID'])
+        pending_cancel_event.add_done_callback(
+            lambda _: pending_response.close()
         )
 
-        if not isinstance(something, domain.CancelEvent):
+        try:
+            response = await pending_response
+        except Exception as e:
+            logger.error("during execute procedure", exception=repr(e))
+        else:
             pending_cancel_event.cancel()
-            await router.send(something)
+            await router.send(response)
 
     return execute
-
-
-@shared.Domain
-class NewGeneratorPayload:
-    ID: str
 
 
 def PieceByPieceEntrypoint(procedure):
@@ -57,50 +55,38 @@ def PieceByPieceEntrypoint(procedure):
 
     async def execute(
         router: 'peer.Peer',
-        call_event: domain.CallEvent,
+        call_event: domain.Invocation,
     ):
         logger.debug('call piece by piece')
 
-        generator = await endpoint(call_event)
+        generator = endpoint(call_event)
 
         pending_stop_event = router.pending_cancel_events.new(generator.ID)
-
-        yield_event = domain.YieldEvent(
-            features=domain.ReplyFeatures(invocationID=call_event.ID),
-            payload=NewGeneratorPayload(ID=generator.ID),
+        pending_stop_event.add_done_callback(
+            lambda _: generator.stop()
         )
 
-        active = True
-        while active:
-            pending_next_event = router.pending_next_events.new(yield_event.ID)
+        yield_event = domain.new_yield_event(
+            {'invocationID': call_event['ID']},
+            {'ID': generator.ID},
+        )
+
+        while generator.active:
+            # FIXME if stop event appear
+            pending_next_event = router.pending_next_events.new(yield_event['ID'])
 
             await router.send(yield_event)
 
-            something = await shared.race(
-                pending_next_event,
-                pending_stop_event,
-                __cancel_pending=False,
-            )
+            next_event = await pending_next_event
 
-            if isinstance(something, domain.StopEvent):
-                pending_next_event.cancel()
-                break
+            response = await generator.next(next_event)
 
-            something = await shared.race(
-                generator.next(something),
-                pending_stop_event,
-                __cancel_pending=False,
-            )
-
-            if isinstance(something, domain.YieldEvent):
-                yield_event = something
+            if response['kind'] == domain.MessageKinds.Yield.value:
+                yield_event = response
                 continue
 
-            if not isinstance(something, domain.StopEvent):
-                pending_stop_event.cancel()
-                await router.send(something)
+            await router.send(response)
 
-            active = False
+        pending_stop_event.cancel()
 
     return execute
-

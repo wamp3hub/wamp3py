@@ -18,51 +18,39 @@ DEFAULT_TIMEOUT = 60
 class RemoteGenerator:
 
     ID: str
-
-    @property
-    def active(self) -> bool:
-        return not self._done
+    active: bool
 
     def __init__(
         self,
         router: 'peer.Peer',
         yield_event: domain.YieldEvent,
     ):
-        self._done = False
+        self.active = True
         self._router = router
         self._last_yield_event = yield_event
-        self._logger = logger
-        payload = entrypoints.NewGeneratorPayload(**yield_event.payload)
-        self.ID = payload.ID
+        self.ID = yield_event['payload']['ID']
 
     async def stop(self):
-        self._done = True
-        stop_event = domain.StopEvent(
-            features=domain.ReplyFeatures(invocationID=self.ID),
-        )
+        self.active = False
+        stop_event = domain.new_stop_event({'invocationID': self.ID})
         await self._router.send(stop_event)
 
     async def next(
         self,
         timeout = DEFAULT_TIMEOUT,
     ) -> domain.YieldEvent | domain.ReplyEvent:
-        self._done = True
-        next_event = domain.NextEvent(
-            features=domain.NextFeatures(
-                yieldID=self._last_yield_event.ID,
-                timeout=timeout,
-            ),
-        )
-        pending_yield_event = self._router.pending_reply_events.new(next_event.ID)
+        self.active = False
+        next_event = domain.new_next_event({'yieldID': self._last_yield_event['ID'], 'timeout': timeout})
+        pending_yield_event = self._router.pending_reply_events.new(next_event['ID'])
         await self._router.send(next_event)
         response = await pending_yield_event
-        if isinstance(response, domain.ErrorEvent):
-            if response.payload.message == 'GeneratorExit':
+        if response['kind'] == domain.MessageKinds.Error.value:
+            if response['payload']['message'] == 'GeneratorExit':
                 raise StopAsyncIteration()
-            raise domain.ApplicationError(response.payload.message)
-        if isinstance(response, domain.YieldEvent):
+            raise domain.ApplicationError(response['payload']['message'])
+        if response['kind'] == domain.MessageKinds.Yield.value:
             self._last_yield_event = response
-            self._done = False
+            self.active = True
         return response
 
     async def __anext__(self):
@@ -72,11 +60,17 @@ class RemoteGenerator:
         return self
 
 
-@shared.Domain
-class NewResourcePayload:
-    ID: str = shared.field(default_factory=shared.new_id)
+class newResourcePayload(domain.Domain):
+    ID: str
     URI: str
-    options: domain.RegisterOptions | domain.SubscribeOptions
+
+
+class subscribePayload(newResourcePayload):
+    options: domain.SubscribeOptions
+
+
+class registerPayload(newResourcePayload):
+    options: domain.RegisterOptions
 
 
 class Session:
@@ -87,30 +81,45 @@ class Session:
     ):
         self._router = router
         self._entrypoints = {}
-        self._logger = logger
+        self._restores = {}
 
-        async def on_event(event: domain.PublishEvent | domain.CallEvent):
-            entrypoint = self._entrypoints.get(event.route.endpointID)
+        async def on_event(event: domain.Publication | domain.Invocation):
+            entrypoint = self._entrypoints.get(event['route']['endpointID'])
             if entrypoint is None:
-                self._logger.error('EntrypointNotFound', event=event)
-                # TODO
+                logger.error('entrypoint not found', event=event)
                 return
 
             try:
                 await entrypoint(self._router, event)
             except Exception as e:
-                self._logger.error('SomethingWentWrong', exception=repr(e), event=event)
+                logger.error('something went wrong', exception=repr(e), event=event)
 
         self._router.incoming_publish_events.observe(on_event)
         self._router.incoming_call_events.observe(on_event)
+
+        async def rejoin(_):
+            logger.warn('rejoining...')
+            for restore in self._restores.values():
+                await restore()
+
+        async def on_leave():
+            logger.warn('leaving...')
+            self._restores = {}
+            self._entrypoints = {}
+
+        self._router.rejoin_events.observe(rejoin, on_leave)
+
+    @property
+    def ID(self) -> str:
+        return self._router.ID
 
     async def publish(
         self,
         URI: str,
         payload,
         /,
-        include: list[str] = None,
-        exclude: list[str] = None,
+        include: list[str] | None = None,
+        exclude: list[str] | None = None,
     ) -> None:
         """
         """
@@ -118,14 +127,9 @@ class Session:
             include = []
         if exclude is None:
             exclude = []
-        publish_event = domain.PublishEvent(
-            ID=shared.new_id(),
-            payload=payload,
-            features=domain.PublishFeatures(
-                URI=URI,
-                include=include,
-                exclude=exclude,
-            ),
+        publish_event = domain.new_publish_event(
+            {'URI': URI, 'include': include, 'exclude': exclude},
+            payload,
         )
         await self._router.send(publish_event)
 
@@ -135,24 +139,16 @@ class Session:
         payload,
         /,
         timeout: int = DEFAULT_TIMEOUT,
-    ) -> domain.ReplyEvent | RemoteGenerator:
-        """
-        """
-        call_event = domain.CallEvent(
-            ID=shared.new_id(),
-            payload=payload,
-            features=domain.CallFeatures(
-                URI=URI,
-                timeout=timeout,
-            ),
+    ) -> domain.ReplyEvent | domain.YieldEvent:
+        call_event = domain.new_call_event(
+            {'URI': URI, 'timeout': timeout}, payload,
         )
-        pending_reply_event = self._router.pending_reply_events.new(call_event.ID)
+        pending_reply_event = self._router.pending_reply_events.new(call_event['ID'])
         await self._router.send(call_event)
         response = await pending_reply_event
-        if isinstance(response, domain.ErrorEvent):
-            raise domain.ApplicationError(response.payload.message)
-        if isinstance(response, domain.YieldEvent):
-            return RemoteGenerator(self._router, response)
+        if response['kind'] == domain.MessageKinds.Error.value:
+            raise domain.ApplicationError(response['payload']['message'])
+        # TODO generator
         return response
 
     async def subscribe(
@@ -163,11 +159,19 @@ class Session:
     ) -> domain.Subscription:
         """
         """
-        payload = NewResourcePayload(URI=URI, options=options)
+        payload: subscribePayload = {'ID': shared.new_id(), 'URI': URI, 'options': options}
         reply_event = await self.call("wamp.router.subscribe", payload)
-        subscription = shared.load(domain.Subscription, reply_event.payload)
+        subscription: domain.Subscription = reply_event['payload']
+
+        async def restore():
+            self._entrypoints.pop(subscription['ID'])
+            await self.subscribe(URI, procedure, **options)
+
+        self._restores[subscription['ID']] = restore
+
         entrypoint = entrypoints.PublishEventEntrypoint(procedure)
-        self._entrypoints[subscription.ID] = entrypoint
+        self._entrypoints[subscription['ID']] = entrypoint
+
         return subscription
 
     async def register(
@@ -178,14 +182,22 @@ class Session:
     ) -> domain.Registration:
         """
         """
-        payload = NewResourcePayload(URI=URI, options=options)
+        payload: registerPayload = {'ID': shared.new_id(), 'URI': URI, 'options': options}
         reply_event = await self.call("wamp.router.register", payload)
-        registration = shared.load(domain.Registration, reply_event.payload)
+        registration: domain.Registration = reply_event['payload']
+
+        async def restore():
+            self._entrypoints.pop(registration['ID'])
+            await self.register(URI, procedure, **options)
+
+        self._restores[registration['ID']] = restore
+
         if inspect.isasyncgenfunction(procedure):
             entrypoint = entrypoints.PieceByPieceEntrypoint(procedure)
         else:
             entrypoint = entrypoints.CallEventEntrypoint(procedure)
-        self._entrypoints[registration.ID] = entrypoint
+        self._entrypoints[registration['ID']] = entrypoint
+
         return registration
 
     async def unsubscribe(
@@ -198,6 +210,7 @@ class Session:
             await self.call("wamp.router.unsubscribe", subscription_id)
         finally:
             self._entrypoints.pop(subscription_id)
+            self._restores.pop(subscription_id)
 
     async def unregister(
         self,
@@ -209,6 +222,7 @@ class Session:
             await self.call("wamp.router.unregister", registration_id)
         finally:
             self._entrypoints.pop(registration_id)
+            self._restores.pop(registration_id)
 
     async def leave(
         self,

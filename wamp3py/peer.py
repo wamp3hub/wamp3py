@@ -139,40 +139,33 @@ class Peer:
 
             logger.debug('new incoming event', event=event)
 
-            if event['kind'] == domain.MessageKinds.Accept.value:
-                try:
+            try:
+                if event['kind'] == domain.MessageKinds.Accept.value:
                     self.pending_accept_events.complete(event['features']['sourceID'], event)
-                except shared.PendingNotFound:
-                    logger.error('pending accept event not found', event=event)
-            elif (
-                event['kind'] == domain.MessageKinds.Reply.value
-                or event['kind'] == domain.MessageKinds.Error.value
-                or event['kind'] == domain.MessageKinds.Yield.value
-                or event['kind'] == domain.MessageKinds.Cancel.value
-            ):
-                await self._acknowledge(event)
-                try:
+                elif (
+                    event['kind'] == domain.MessageKinds.Reply.value
+                    or event['kind'] == domain.MessageKinds.Error.value
+                    or event['kind'] == domain.MessageKinds.Yield.value
+                ):
+                    await self._acknowledge(event)
                     self.pending_reply_events.complete(event['features']['invocationID'], event)
-                except shared.PendingNotFound:
-                    logger.error('pending reply event not found', event=event)
-            elif event['kind'] == domain.MessageKinds.Publish.value:
-                await self._acknowledge(event)
-                self._loop.create_task(
-                    self.incoming_publish_events.next(event)
-                )
-            elif event['kind'] == domain.MessageKinds.Call.value:
-                await self._acknowledge(event)
-                self._loop.create_task(
-                    self.incoming_call_events.next(event)
-                )
-            elif event['kind'] == domain.MessageKinds.Next.value:
-                await self._acknowledge(event)
-                try:
+                elif event['kind'] == domain.MessageKinds.Publish.value:
+                    await self._acknowledge(event)
+                    self._loop.create_task(
+                        self.incoming_publish_events.next(event)
+                    )
+                elif event['kind'] == domain.MessageKinds.Call.value:
+                    await self._acknowledge(event)
+                    self._loop.create_task(
+                        self.incoming_call_events.next(event)
+                    )
+                elif event['kind'] == domain.MessageKinds.Next.value:
+                    await self._acknowledge(event)
                     self.pending_next_events.complete(event['features']['yieldID'], event)
-                except shared.PendingNotFound:
-                    logger.error('pending next event not found', event=event)
-            else:
-                logger.error('invalid event', event=event)
+                else:
+                    logger.error('invalid event', event=event)
+            except Exception as e:
+                logger.error('during handle incoming event', event=event, exception=repr(e))
 
         await self.incoming_call_events.complete()
         await self.incoming_publish_events.complete()

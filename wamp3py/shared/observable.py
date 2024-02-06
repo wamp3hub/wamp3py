@@ -29,7 +29,6 @@ class Observable[T]:
         self._observers.append(observer)
         return observer
 
-    # FIXME must be sync
     async def next(
         self,
         *args,
@@ -40,7 +39,6 @@ class Observable[T]:
                 coro = observer.next(*args, **kwargs)
                 tg.create_task(coro)
 
-    # FIXME must be sync
     async def complete(
         self,
         *args,

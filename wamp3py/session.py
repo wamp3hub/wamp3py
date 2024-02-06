@@ -1,4 +1,3 @@
-import inspect
 import typing
 
 from . import domain
@@ -85,14 +84,13 @@ class Session:
 
         async def on_event(event: domain.Publication | domain.Invocation):
             entrypoint = self._entrypoints.get(event['route']['endpointID'])
-            if entrypoint is None:
+            if callable(entrypoint):
+                try:
+                    await entrypoint(self._router, event)
+                except Exception as e:
+                    logger.error('something went wrong', exception=repr(e), event=event)
+            else:
                 logger.error('entrypoint not found', event=event)
-                return
-
-            try:
-                await entrypoint(self._router, event)
-            except Exception as e:
-                logger.error('something went wrong', exception=repr(e), event=event)
 
         self._router.incoming_publish_events.observe(on_event)
         self._router.incoming_call_events.observe(on_event)
@@ -120,7 +118,7 @@ class Session:
         /,
         include: list[str] | None = None,
         exclude: list[str] | None = None,
-    ) -> None:
+    ) -> domain.PublishEvent:
         """
         """
         if include is None:
@@ -132,6 +130,7 @@ class Session:
             payload,
         )
         await self._router.send(publish_event)
+        return publish_event
 
     async def call(
         self,
@@ -155,17 +154,17 @@ class Session:
         self,
         URI: str,
         procedure: 'endpoints.ProcedureToSubscribe',
-        **options: domain.SubscribeOptions,
     ) -> domain.Subscription:
         """
         """
+        options: domain.SubscribeOptions = {'route': []}
         payload: subscribePayload = {'ID': shared.new_id(), 'URI': URI, 'options': options}
         reply_event = await self.call("wamp.router.subscribe", payload)
         subscription: domain.Subscription = reply_event['payload']
 
         async def restore():
             self._entrypoints.pop(subscription['ID'])
-            await self.subscribe(URI, procedure, **options)
+            await self.subscribe(URI, procedure)
 
         self._restores[subscription['ID']] = restore
 
@@ -178,24 +177,21 @@ class Session:
         self,
         URI: str,
         procedure: 'endpoints.ProcedureToRegister',
-        **options: domain.RegisterOptions,
     ) -> domain.Registration:
         """
         """
+        options: domain.RegisterOptions = {'route': []}
         payload: registerPayload = {'ID': shared.new_id(), 'URI': URI, 'options': options}
         reply_event = await self.call("wamp.router.register", payload)
         registration: domain.Registration = reply_event['payload']
 
         async def restore():
             self._entrypoints.pop(registration['ID'])
-            await self.register(URI, procedure, **options)
+            await self.register(URI, procedure)
 
         self._restores[registration['ID']] = restore
 
-        if inspect.isasyncgenfunction(procedure):
-            entrypoint = entrypoints.PieceByPieceEntrypoint(procedure)
-        else:
-            entrypoint = entrypoints.CallEventEntrypoint(procedure)
+        entrypoint = entrypoints.CallEventEntrypoint(procedure)
         self._entrypoints[registration['ID']] = entrypoint
 
         return registration

@@ -26,7 +26,11 @@ class WSTransport(peer.Transport):
         await self.connection.send(message)
 
     async def read(self) -> domain.Event:
-        message = await self.connection.recv()
+        try:
+            message = await self.connection.recv()
+        except websockets.ConnectionClosedOK:
+            raise peer.ConnectionClosed()
+
         event = self.serializer.decode(message)
         return event
 
@@ -92,5 +96,7 @@ async def websocket_join(
         reconnection_strategy=reconnection_strategy,
     )
     router = peer.Peer(payload['yourID'], transport)
+    import asyncio
+    await asyncio.sleep(0)
     instance = session.Session(router)
     return instance

@@ -1,41 +1,35 @@
-[build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
-
-[project]
+[tool.poetry]
 name = "wamp3py"
-version = "0.4.32"
-description = "Python client for WAMP"
-authors = [
-    {name = "Aidar Turkenov", email = "a.k.turken0v@gmail.com"},
-]
+version = "0.1.0"
+description = ""
+authors = ["a.k.turken0v@gmail.com"]
 readme = "README.md"
-license = { file = "LICENSE" }
-classifiers = [
-    "License :: OSI Approved :: MIT License",
-    "Programming Language :: Python",
-    "Programming Language :: Python :: 3",
-    "Topic :: Internet",
-]
-keywords = ["wamp"]
-dependencies = [
-    "dacite==1.8.1",
-    "httpx==0.25.2",
-    "websockets==12.0",
-]
-requires-python = ">=3.12"
 
-[project.optional-dependencies]
-dev = ["isort", "pytest", "pytest-asyncio"]
+[tool.poetry.dependencies]
+python = "^3.12"
+websockets = "^12.0"
+httpx = "^0.26.0"
 
-[project.urls]
-Homepage = 'https://github.com/wamp3hub/wamp3py'
-Documentation = "https://wamp3hub.github.io/documentation"
+[tool.poetry.group.dev.dependencies]
+pytest = "7.4.4"
+pytest-asyncio = "^0.23.4"
+uvloop = "^0.19.0"
 
-[tool.hatch.build.targets.wheel]
-packages = ["wamp3py/"]
+[[tool.poetry.source]]
+name = "PyPI"
+priority = "primary"
+
+[[tool.poetry.source]]
+name = "fpho"
+url = "https://files.pythonhosted.org"
+priority = "primary"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
 
 [tool.pytest.ini_options]
-testpaths = "testing"
-pythonpath = "wamp3py/"
 asyncio_mode = "auto"
+log_cli = true
+log_cli_level = "DEBUG"
+pythonpath = "."

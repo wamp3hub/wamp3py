@@ -4,22 +4,33 @@ import typing
 from . import shared
 
 
-class ApplicationError(Exception):
+class SomethingWentWrong(Exception):
+
+    def __init__(
+        self,
+        message: str | None = None,
+    ):
+        self.message: str | None = message
+
+
+class GeneratorExit(SomethingWentWrong):
+    """
+    """
+
+
+class InvalidPayload(SomethingWentWrong):
+    """
+    """
+
+
+class ApplicationError(SomethingWentWrong):
     """
     if you want to display error messages to user,
     you must derive your exception from this class.
     """
 
-    message: str
 
-    def __init__(
-        self,
-        message: str,
-    ) -> None:
-        self.message = message
-
-
-class MessageKinds(enum.auto):
+class MessageKinds(enum.Enum):
     Call = 127
     Cancel = 126
     Next = 125
@@ -30,155 +41,245 @@ class MessageKinds(enum.auto):
     Reply = -127
 
 
-@shared.Domain
-class eventFeatures:
-    """
-    """
+class Domain(typing.TypedDict):
+    ...
 
 
-@shared.Domain
-class eventRoute:
-    """
-    """
+class eventFeatures(Domain):
+    ...
 
 
-@shared.Domain
-class Event:
-    ID: str = shared.field(default_factory=shared.new_id)
+class eventRoute(Domain):
+    ...
 
 
-@shared.Domain
+class EventProto(Domain):
+    ID: str
+
+
 class AcceptFeatures(eventFeatures):
     sourceID: str
 
 
-@shared.Domain
-class AcceptEvent(Event):
-    kind: int = MessageKinds.Accept
+class AcceptEvent(EventProto):
+    kind: typing.Literal[0]
     features: AcceptFeatures
 
 
-@shared.Domain
+def new_accept_event(
+    features: AcceptFeatures,
+) -> AcceptEvent:
+    return {
+        'ID': shared.new_id(),
+        'kind': MessageKinds.Accept.value,
+        'features': features,
+    }
+
+
 class PublishFeatures(eventFeatures):
     URI: str
-    include: list[str] = shared.field(default_factory=list)
-    exclude: list[str] = shared.field(default_factory=list)
+    include: list[str]
+    exclude: list[str]
 
 
-@shared.Domain
+class PublishEvent[T: typing.Any](EventProto):
+    kind: typing.Literal[1]
+    features: PublishFeatures
+    payload: T
+
+
+def new_publish_event[T: typing.Any](
+    features: PublishFeatures, 
+    payload: T,
+) -> PublishEvent[T]:
+    return {
+        'ID': shared.new_id(),
+        'kind': MessageKinds.Publish.value,
+        'features': features,
+        'payload': payload,
+    }
+
+
 class PublishRoute(eventRoute):
     publisherID: str
     subscriberID: str
     endpointID: str
-    visitedRouters: list[str] = shared.field(default_factory=list)
+    visitedRouters: list[str]
 
 
-@shared.Domain
-class PublishEvent(Event):
-    kind: int = MessageKinds.Publish
-    features: PublishFeatures
-    payload: typing.Any
-    route: PublishRoute | None = None
+class Publication(PublishEvent):
+    route: PublishRoute
 
 
-@shared.Domain
 class CallFeatures(eventFeatures):
     URI: str
     timeout: int
 
 
-@shared.Domain
+class CallEvent[T: typing.Any](EventProto):
+    kind: typing.Literal[127]
+    features: CallFeatures
+    payload: T
+
+
+def new_call_event[T: typing.Any](
+    features: CallFeatures,
+    payload: T,
+) -> CallEvent[T]:
+    return {
+        'ID': shared.new_id(),
+        'kind': MessageKinds.Call.value,
+        'features': features,
+        'payload': payload,
+    }
+
+
 class CallRoute(eventRoute):
     callerID: str
     executorID: str
     endpointID: str
-    visitedRouters: list[str] = shared.field(default_factory=list)
+    visitedRouters: list[str]
 
 
-@shared.Domain
-class CallEvent(Event):
-    kind: int = MessageKinds.Call
-    features: CallFeatures
-    payload: typing.Any
-    route: CallRoute | None = None
+class Invocation(CallEvent):
+    route: CallRoute
 
 
-@shared.Domain
 class ReplyFeatures(eventFeatures):
     invocationID: str
 
 
-@shared.Domain
-class CancelEvent(Event):
-    kind: int = MessageKinds.Cancel
+class CancelEvent(EventProto):
+    kind: typing.Literal[126]
     features: ReplyFeatures
 
 
-@shared.Domain
-class ReplyEvent(Event):
-    kind: int = MessageKinds.Reply
+def new_cancel_event(
+    features: ReplyFeatures,
+) -> CancelEvent:
+    return {
+        'ID': shared.new_id(),
+        'kind': MessageKinds.Cancel.value,
+        'features': features,
+    }
+
+
+class ReplyEvent[T: typing.Any](EventProto):
+    kind: typing.Literal[-127]
     features: ReplyFeatures
-    payload: typing.Any
+    payload: T
 
 
-@shared.Domain
-class ErrorEventPayload:
+def new_reply_event[T: typing.Any](
+    features: ReplyFeatures,
+    payload: T,
+) -> ReplyEvent[T]:
+    return {
+        'ID': shared.new_id(),
+        'kind': MessageKinds.Reply.value,
+        'features': features,
+        'payload': payload,
+    }
+
+
+class ErrorEventPayload(Domain):
     message: str
 
 
-@shared.Domain
-class ErrorEvent(ReplyEvent):
-    kind: int = MessageKinds.Error
+class ErrorEvent(EventProto):
+    kind: typing.Literal[-126]
+    features: ReplyFeatures
     payload: ErrorEventPayload
 
 
-@shared.Domain
-class YieldEvent(ReplyEvent):
-    kind: int = MessageKinds.Yield
+def new_error_event(
+    features: ReplyFeatures,
+    e: SomethingWentWrong,
+) -> ErrorEvent:
+    return {
+        'ID': shared.new_id(),
+        'kind': MessageKinds.Error.value,
+        'features': features,
+        'payload': {
+            'message': e.__class__.__name__,
+        },
+    }
 
 
-@shared.Domain
+class YieldEvent[T: typing.Any](EventProto):
+    kind: typing.Literal[-125]
+    features: ReplyFeatures
+    payload: T
+
+
+def new_yield_event[T: typing.Any](
+    features: ReplyFeatures,
+    payload: T,
+) -> YieldEvent[T]:
+    return {
+        'ID': shared.new_id(),
+        'kind': MessageKinds.Yield.value,
+        'features': features,
+        'payload': payload,
+    }
+
+
 class NextFeatures(eventFeatures):
     yieldID: str
     timeout: int
 
 
-@shared.Domain
-class NextEvent(Event):
-    kind: int = MessageKinds.Next
+class NextEvent(EventProto):
+    kind: typing.Literal[125]
     features: NextFeatures
 
 
-StopEvent = CancelEvent
+def new_next_event(
+    features: NextFeatures,
+) -> NextEvent:
+    return {
+        'ID': shared.new_id(),
+        'kind': MessageKinds.Next.value,
+        'features': features,
+    }
 
 
-@shared.Domain
-class options:
-    route: list[str] = shared.field(default_factory=list)
+type StopEvent = CancelEvent
 
 
-@shared.Domain
+new_stop_event = new_cancel_event
+
+
+type Event = (
+    AcceptEvent
+    | PublishEvent | Publication
+    | CallEvent | Invocation | ReplyEvent | CancelEvent | ErrorEvent
+    | YieldEvent | NextEvent | StopEvent
+)
+
+
+class options(Domain):
+    route: list[str]
+
+
 class RegisterOptions(options):
     ...
 
 
-@shared.Domain
 class SubscribeOptions(options):
     ...
 
 
-@shared.Domain
-class resource:
+class resource(Domain):
     ID: str
     URI: str
     authorID: str
 
 
-@shared.Domain
 class Registration(resource):
     options: RegisterOptions
 
 
-@shared.Domain
 class Subscription(resource):
     options: SubscribeOptions
+

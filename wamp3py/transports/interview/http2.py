@@ -2,7 +2,7 @@ import typing
 
 import httpx
 
-from ... import shared
+from ... import domain
 
 
 class InterviewFail(Exception):
@@ -10,8 +10,7 @@ class InterviewFail(Exception):
     """
 
 
-@shared.Domain
-class SuccessPayload:
+class SuccessPayload(domain.Domain):
     routerID: str
     yourID: str
     ticket: str
@@ -31,7 +30,7 @@ async def http2interview(
         response = await client.post(url, json=request_json)
         if response.status_code == 200:
             response_json = response.json()
-            response_payload = SuccessPayload(**response_json)
+            response_payload = response_json
             return response_payload
         if response.status_code == 400:
             response_json = response.json()

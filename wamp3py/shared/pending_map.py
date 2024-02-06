@@ -1,4 +1,5 @@
 import asyncio
+import typing
 
 
 class PendingNotFound(Exception):
@@ -6,15 +7,15 @@ class PendingNotFound(Exception):
     """
 
 
-class PendingMap:
+class PendingMap[T: typing.Any]:
 
     def __init__(self):
-        self._futures = {}
+        self._futures: typing.MutableMapping[str, asyncio.Future] = {}
 
     def new(
         self,
         key: str,
-    ) -> asyncio.Future:
+    ) -> asyncio.Future[T]:
         """
         """
         loop = asyncio.get_running_loop()
@@ -25,7 +26,7 @@ class PendingMap:
     def complete(
         self,
         key: str,
-        value: str,
+        value: T,
     ) -> None:
         """
         """

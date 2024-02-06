@@ -1,5 +1,10 @@
 .vscode/
 
+.git
+.gitignore
+LICENSE
+README.md
+
 venv/
 __pycache__/
 *.pyc

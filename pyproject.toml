@@ -1,8 +1,8 @@
 [tool.poetry]
 name = "wamp3py"
-version = "0.1.0"
+version = "0.5.0"
 description = ""
-authors = ["a.k.turken0v@gmail.com"]
+authors = ["Aidar Turkenov <a.k.turken0v@gmail.com>"]
 readme = "README.md"
 
 [tool.poetry.dependencies]

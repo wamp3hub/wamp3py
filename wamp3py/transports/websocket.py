@@ -30,6 +30,8 @@ class WSTransport(peer.Transport):
             message = await self.connection.recv()
         except websockets.ConnectionClosedOK:
             raise peer.ConnectionClosed()
+        except Exception:
+            raise reconnectable.BadConnection()
 
         event = self.serializer.decode(message)
         return event

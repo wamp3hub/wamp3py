@@ -79,6 +79,7 @@ async def test_rpc():
 
     wamps = await wamp3py.websocket_join(
         'localhost:8800',
+        'test',
         credentials=None,
     )
 

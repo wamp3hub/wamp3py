@@ -9,7 +9,7 @@ from .. import peer
 from .. import session
 from .. import serializers
 from .. import shared
-from . import interview
+from .. import interview
 from . import reconnectable
 
 
@@ -79,26 +79,35 @@ async def websocket_connect(
 
 async def websocket_join(
     address: str,
+    role: str,
     /,
     credentials: typing.Any,
     secure: bool = False,
     serializer: peer.Serializer = serializers.DefaultSerializer,
     reconnection_strategy: shared.RetryStrategy = shared.DefaultRetryStrategy,
 ) -> session.Session:
-    payload = await interview.http2interview(
-        address=address, 
+    interview_result = await interview.http2interview(
+        address=address,
         secure=secure,
-        credentials=credentials,
+        resume={
+            'role': role,
+            'credentials': credentials,
+        },
     )
+
     transport = await websocket_connect(
         address=address,
         secure=secure,
-        ticket=payload['ticket'],
+        ticket=interview_result['ticket'],
         serializer=serializer,
         reconnection_strategy=reconnection_strategy,
     )
-    router = peer.Peer(payload['yourID'], transport)
-    import asyncio
-    await asyncio.sleep(0)
+
+    peerDetails: peer.PeerDetails = {
+        'ID': interview_result['yourID'],
+        'role': role,
+        'offer': interview_result['offer'],
+    }
+    router = peer.Peer(peerDetails, transport)
     instance = session.Session(router)
     return instance

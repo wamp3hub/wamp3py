@@ -3,6 +3,7 @@ import typing
 
 from . import domain
 from . import logger
+from . import interview
 from . import shared
 
 
@@ -37,6 +38,7 @@ class Serializer(typing.Protocol):
     ) -> bytes:
         """
         """
+        raise NotImplementedError()
 
     def decode(
         self,
@@ -44,6 +46,7 @@ class Serializer(typing.Protocol):
     ) -> domain.Event:
         """
         """
+        raise NotImplementedError()
 
 
 class Transport(typing.Protocol):
@@ -54,14 +57,23 @@ class Transport(typing.Protocol):
     async def read(self) -> domain.Event:
         """
         """
+        raise NotImplementedError()
 
     async def write(self, event: domain.Event) -> None:
         """
-        """        
+        """
+        raise NotImplementedError()
 
     async def close(self) -> None:
         """
         """
+        raise NotImplementedError()
+
+
+class PeerDetails(domain.Domain):
+    ID: str
+    role: str
+    offer: interview.Offer
 
 
 class Peer:
@@ -71,10 +83,10 @@ class Peer:
 
     def __init__(
         self,
-        ID: str,
+        details: PeerDetails,
         transport: Transport,
     ):
-        self.ID = ID
+        self.details = details
         self.transport = transport
         self.rejoin_events: shared.Observable[bool] = shared.Observable()
         self.incoming_publish_events: shared.Observable[domain.Publication] = shared.Observable()

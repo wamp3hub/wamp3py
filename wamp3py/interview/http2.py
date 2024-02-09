@@ -18,6 +18,7 @@ class Resume[T: typing.Any](domain.Domain):
 class Offer(domain.Domain):
     registrationsLimit: int
     subscriptionsLimit: int
+    ticketLifeTime: int
 
 
 class Result(domain.Domain):

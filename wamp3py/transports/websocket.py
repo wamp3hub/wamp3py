@@ -106,8 +106,7 @@ async def websocket_join(
     peerDetails: peer.PeerDetails = {
         'ID': interview_result['yourID'],
         'role': role,
-        'registrationsLimit': interview_result['offer']['registrationsLimit'],
-        'subscriptionsLimit': interview_result['offer']['subscriptionsLimit'],
+        'offer': interview_result['offer'],
     }
     router = peer.Peer(peerDetails, transport)
     instance = session.Session(router)

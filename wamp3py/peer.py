@@ -3,6 +3,7 @@ import typing
 
 from . import domain
 from . import logger
+from . import interview
 from . import shared
 
 
@@ -34,16 +35,18 @@ class Serializer(typing.Protocol):
     def encode(
         self,
         event: domain.Event,
-    ) -> bytes:  # type: ignore
+    ) -> bytes:
         """
         """
+        raise NotImplementedError()
 
     def decode(
         self,
         message: bytes | str,
-    ) -> domain.Event:  # type: ignore
+    ) -> domain.Event:
         """
         """
+        raise NotImplementedError()
 
 
 class Transport(typing.Protocol):
@@ -51,24 +54,26 @@ class Transport(typing.Protocol):
     Transport must implement this methods
     """
 
-    async def read(self) -> domain.Event:  # type: ignore
+    async def read(self) -> domain.Event:
         """
         """
+        raise NotImplementedError()
 
     async def write(self, event: domain.Event) -> None:
         """
-        """        
+        """
+        raise NotImplementedError()
 
     async def close(self) -> None:
         """
         """
+        raise NotImplementedError()
 
 
 class PeerDetails(domain.Domain):
     ID: str
     role: str
-    registrationsLimit: int
-    subscriptionsLimit: int
+    offer: interview.Offer
 
 
 class Peer:

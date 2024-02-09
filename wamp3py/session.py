@@ -76,9 +76,9 @@ class Session:
 
     def __init__(
         self,
-        router: 'peer.Peer',
+        peer: 'peer.Peer',
     ):
-        self._router = router
+        self._router = peer
         self._entrypoints = {}
         self._restores = {}
 
@@ -109,26 +109,41 @@ class Session:
 
     @property
     def ID(self) -> str:
-        return self._router.ID
+        return self._router.details['ID']
+
+    @property
+    def role(self) -> str:
+        return self._router.details['role']
 
     async def publish(
         self,
         URI: str,
         payload,
         /,
-        include: list[str] | None = None,
-        exclude: list[str] | None = None,
+        include_subscribers: list[str] | None = None,
+        include_roles: list[str] | None = None,
+        exclude_subscribers: list[str] | None = None,
+        exclude_roles: list[str] | None = None,
     ) -> domain.PublishEvent:
         """
         """
-        if include is None:
-            include = []
-        if exclude is None:
-            exclude = []
-        publish_event = domain.new_publish_event(
-            {'URI': URI, 'include': include, 'exclude': exclude},
-            payload,
-        )
+        if include_subscribers is None:
+            include_subscribers = []
+        if include_roles is None:
+            logger.warn('fill in the list of allowed subscriber roles for security reasons')
+            include_roles = []
+        if exclude_subscribers is None:
+            exclude_subscribers = []
+        if exclude_roles is None:
+            exclude_roles = []
+        publish_features: domain.PublishFeatures = {
+            'URI': URI,
+            'includeSubscribers': include_subscribers,
+            'includeRoles': include_roles,
+            'excludeSubscribers': exclude_subscribers,
+            'excludeRoles': exclude_roles,
+        }
+        publish_event = domain.new_publish_event(publish_features, payload)
         await self._router.send(publish_event)
         return publish_event
 
@@ -138,10 +153,21 @@ class Session:
         payload,
         /,
         timeout: int = DEFAULT_TIMEOUT,
+        include_roles: list[str] | None = None,
+        exclude_roles: list[str] | None = None,
     ) -> domain.ReplyEvent | domain.YieldEvent:
-        call_event = domain.new_call_event(
-            {'URI': URI, 'timeout': timeout}, payload,
-        )
+        if include_roles is None:
+            logger.warn('fill in the list of allowed executor roles for security reasons')
+            include_roles = []
+        if exclude_roles is None:
+            exclude_roles = []
+        call_features: domain.CallFeatures = {
+            'URI': URI,
+            'timeout': timeout,
+            'includeRoles': include_roles,
+            'excludeRoles': exclude_roles,
+        }
+        call_event = domain.new_call_event(call_features, payload)
         pending_reply_event = self._router.pending_reply_events.new(call_event['ID'])
         await self._router.send(call_event)
         response = await pending_reply_event
@@ -154,10 +180,20 @@ class Session:
         self,
         URI: str,
         procedure: 'endpoints.ProcedureToSubscribe',
+        /,
+        include_roles: list[str] | None = None,
+        exclude_roles: list[str] | None = None,
     ) -> domain.Subscription:
-        """
-        """
-        options: domain.SubscribeOptions = {'route': []}
+        if include_roles is None:
+            logger.warn('fill in the list of allowed subscriber roles for security reasons')
+            include_roles = []
+        if exclude_roles is None:
+            exclude_roles = []
+        options: domain.SubscribeOptions = {
+            'includeRoles': include_roles,
+            'excludeRoles': exclude_roles,
+            'route': [],
+        }
         payload: subscribePayload = {'ID': shared.new_id(), 'URI': URI, 'options': options}
         reply_event = await self.call("wamp.router.subscribe", payload)
         subscription: domain.Subscription = reply_event['payload']
@@ -177,10 +213,20 @@ class Session:
         self,
         URI: str,
         procedure: 'endpoints.ProcedureToRegister',
+        /,
+        include_roles: list[str] | None = None,
+        exclude_roles: list[str] | None = None,
     ) -> domain.Registration:
-        """
-        """
-        options: domain.RegisterOptions = {'route': []}
+        if include_roles is None:
+            logger.warn('fill in the list of allowed caller roles for security reasons')
+            include_roles = []
+        if exclude_roles is None:
+            exclude_roles = []
+        options: domain.RegisterOptions = {
+            'includeRoles': include_roles,
+            'excludeRoles': exclude_roles,
+            'route': [],
+        }
         payload: registerPayload = {'ID': shared.new_id(), 'URI': URI, 'options': options}
         reply_event = await self.call("wamp.router.register", payload)
         registration: domain.Registration = reply_event['payload']

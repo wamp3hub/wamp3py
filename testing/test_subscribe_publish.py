@@ -56,6 +56,7 @@ async def test_subscribe_publish():
 
     wamps = await wamp3py.websocket_join(
         'localhost:8800',
+        'test',
         credentials=None,
     )
 

@@ -34,14 +34,14 @@ class Serializer(typing.Protocol):
     def encode(
         self,
         event: domain.Event,
-    ) -> bytes:
+    ) -> bytes:  # type: ignore
         """
         """
 
     def decode(
         self,
         message: bytes | str,
-    ) -> domain.Event:
+    ) -> domain.Event:  # type: ignore
         """
         """
 
@@ -51,7 +51,7 @@ class Transport(typing.Protocol):
     Transport must implement this methods
     """
 
-    async def read(self) -> domain.Event:
+    async def read(self) -> domain.Event:  # type: ignore
         """
         """
 
@@ -64,6 +64,13 @@ class Transport(typing.Protocol):
         """
 
 
+class PeerDetails(domain.Domain):
+    ID: str
+    role: str
+    registrationsLimit: int
+    subscriptionsLimit: int
+
+
 class Peer:
     """
     Peer must be initialized inside running event loop!
@@ -71,10 +78,10 @@ class Peer:
 
     def __init__(
         self,
-        ID: str,
+        details: PeerDetails,
         transport: Transport,
     ):
-        self.ID = ID
+        self.details = details
         self.transport = transport
         self.rejoin_events: shared.Observable[bool] = shared.Observable()
         self.incoming_publish_events: shared.Observable[domain.Publication] = shared.Observable()

@@ -78,8 +78,10 @@ def new_accept_event(
 
 class PublishFeatures(eventFeatures):
     URI: str
-    include: list[str]
-    exclude: list[str]
+    includeSubscribers: list[str]
+    includeRoles: list[str]
+    excludeSubscribers: list[str]
+    excludeRoles: list[str]
 
 
 class PublishEvent[T: typing.Any](EventProto):
@@ -114,6 +116,8 @@ class Publication(PublishEvent):
 class CallFeatures(eventFeatures):
     URI: str
     timeout: int
+    includeRoles: list[str]
+    excludeRoles: list[str]
 
 
 class CallEvent[T: typing.Any](EventProto):
@@ -259,6 +263,8 @@ type Event = (
 
 
 class options(Domain):
+    includeRoles: list[str]
+    excludeRoles: list[str]
     route: list[str]
 
 

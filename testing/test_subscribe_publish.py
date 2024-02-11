@@ -1,42 +1,37 @@
 import asyncio
 import logging
-from uuid import uuid4
+
+import pytest
 
 import wamp3py
-from wamp3py.shared import PendingMap
 
 
 logger = logging.getLogger('wamp3py-test-subscribe-publish')
 
 
+@pytest.mark.timeout(300)
 async def test_subscribe_publish():
-    pendings = PendingMap[str]()
+    q = asyncio.Queue()
+    subscribe_options = {'include_roles': ['test']}
+    publish_options = {'include_roles': ['test']}
 
-    async def on_event(
-        payload: str,
-        event_id: str,
-        **kwargs,
-    ) -> None:
-        pendings.complete(payload, event_id)
+    async def on_event(*args, **kwargs) -> None:
+        await q.put(True)
 
     async def assert_publication(
         URI: str,
+        subscribersCount: int = 1,
     ):
-        key = str(uuid4())
-
-        p = pendings.new(key)
-
-        event = await wamps.publish(URI, key)
+        await wamps.publish(URI, None, **publish_options)
 
         async with asyncio.timeout(60):
-            event_id = await p
-            if event_id != event['ID']:
-                raise Exception('InvalidBehaviour')
+            for _ in range(subscribersCount):
+                await q.get()
 
     async def test_happy_path():
         URI = 'net.example.test'
 
-        subscription = await wamps.subscribe(URI, on_event)
+        subscription = await wamps.subscribe(URI, on_event, **subscribe_options)
 
         await assert_publication(URI)
 
@@ -45,14 +40,18 @@ async def test_subscribe_publish():
     async def stress_test():
         URI = 'net.example.test'
 
-        subscription = await wamps.subscribe(URI, on_event)
+        alpha = await wamps.subscribe(URI, on_event, **subscribe_options)
+        beta = await wamps.subscribe(URI, on_event, **subscribe_options)
+        gamma = await wamps.subscribe(URI, on_event, **subscribe_options)
 
         async with asyncio.TaskGroup() as tg:
-            for _ in range(100):
-                coro = assert_publication(URI)
+            for _ in range(10000):
+                coro = assert_publication(URI, 3)
                 tg.create_task(coro)
 
-        await wamps.unsubscribe(subscription['ID'])
+        await wamps.unsubscribe(alpha['ID'])
+        await wamps.unsubscribe(beta['ID'])
+        await wamps.unsubscribe(gamma['ID'])
 
     wamps = await wamp3py.websocket_join(
         'localhost:8800',

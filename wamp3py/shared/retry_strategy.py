@@ -79,4 +79,4 @@ class BackoffRS(ConstantRS):
 
 DontRetryStrategy = ConstantRS(0, 0)
 
-DefaultRetryStrategy = BackoffRS(0, 100, 3, 60)
+DefaultRetryStrategy = BackoffRS(0, 100, 3, 3600)

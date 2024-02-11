@@ -66,36 +66,34 @@ def CallEventEndpoint(procedure: ProcedureToRegister):
 
 class PieceByPiece:
 
-    @property
-    def active(self) -> bool:
-        return not self._done
-
     def __init__(
         self,
-        generator
+        generator: typing.AsyncGenerator,
     ):
-        self.ID = shared.new_id()
-        self._done = False
+        self.done: bool = False
         self._generator: typing.AsyncGenerator = generator
 
     async def next(
         self,
-        next_event: domain.NextEvent,
-    ) -> domain.YieldEvent | domain.ErrorEvent:
-        self._done = True
-        reply_features: domain.ReplyFeatures = {'invocationID': next_event['ID']}
+        next_event: domain.SubEvent,
+    ) -> domain.SubEvent | domain.ErrorEvent:
+        self.done = True
         try:
             payload = await anext(self._generator)
-            self._done = False
-            return domain.new_yield_event(reply_features, payload)
+            self.done = False
+            return domain.new_subevent(next_event['streamID'], payload)
         except (StopIteration, StopAsyncIteration):
             logger.debug('generator done')
-            return domain.new_error_event(reply_features, domain.GeneratorExit())
+            return domain.new_error_event(
+                {'invocationID': next_event['ID']}, domain.GeneratorExit(),
+            )
         except domain.ApplicationError as e:
-            return domain.new_error_event(reply_features, e)
+            return domain.new_error_event({'invocationID': next_event['ID']}, e)
         except Exception as e:
             logger.error('during execute call event endpoint', exception=repr(e))
-            return domain.new_error_event(reply_features, domain.ApplicationError())
+            return domain.new_error_event(
+                {'invocationID': next_event['ID']}, domain.ApplicationError(),
+            )
 
     async def stop(
         self,
@@ -103,8 +101,8 @@ class PieceByPiece:
         __value: typing.Any = None,
         __traceback: typing.Any = None
     ):
-        if not self._done:
-            self._done = True
+        if not self.done:
+            self.done = True
             await self._generator.athrow(__type, __value, __traceback)
 
 

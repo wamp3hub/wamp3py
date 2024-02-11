@@ -91,12 +91,9 @@ class Peer:
         self.rejoin_events: shared.Observable[bool] = shared.Observable()
         self.incoming_publish_events: shared.Observable[domain.Publication] = shared.Observable()
         self.incoming_call_events: shared.Observable[domain.Invocation] = shared.Observable()
+        self.incoming_subevents: shared.Observable[domain.SubEvent] = shared.Observable()
         self.pending_accept_events: shared.PendingMap[domain.AcceptEvent] = shared.PendingMap()
-        self.pending_reply_events: shared.PendingMap[
-            domain.ReplyEvent | domain.ErrorEvent | domain.YieldEvent
-        ] = shared.PendingMap()
-        self.pending_cancel_events: shared.PendingMap[domain.CancelEvent | domain.StopEvent] = shared.PendingMap()
-        self.pending_next_events: shared.PendingMap[domain.NextEvent] = shared.PendingMap()
+        self.pending_reply_events: shared.PendingMap[domain.ReplyEvent | domain.ErrorEvent] = shared.PendingMap()
         self._loop = asyncio.get_running_loop()
         self._loop.create_task(
             self._read_incoming_events()
@@ -142,11 +139,11 @@ class Peer:
             try:
                 event = await self.transport.read()
             except ConnectionRestored:
-                logger.debug('connection restored')
+                logger.warn('connection restored')
                 await self.rejoin_events.next(True)
                 continue
-            except ConnectionClosed:
-                logger.debug('connection closed')
+            except Exception as e:
+                logger.error('during read new incoming events', exception=repr(e))
                 break
 
             logger.debug('new incoming event', event=event)
@@ -157,7 +154,6 @@ class Peer:
                 elif (
                     event['kind'] == domain.MessageKinds.Reply.value
                     or event['kind'] == domain.MessageKinds.Error.value
-                    or event['kind'] == domain.MessageKinds.Yield.value
                 ):
                     await self._acknowledge(event)
                     self.pending_reply_events.complete(event['features']['invocationID'], event)
@@ -171,9 +167,11 @@ class Peer:
                     self._loop.create_task(
                         self.incoming_call_events.next(event)
                     )
-                elif event['kind'] == domain.MessageKinds.Next.value:
+                elif event['kind'] == domain.MessageKinds.SubEvent.value:
                     await self._acknowledge(event)
-                    self.pending_next_events.complete(event['features']['yieldID'], event)
+                    self._loop.create_task(
+                        self.incoming_subevents.next(event)
+                    )
                 else:
                     logger.error('invalid event', event=event)
             except Exception as e:

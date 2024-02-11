@@ -32,11 +32,10 @@ class ApplicationError(SomethingWentWrong):
 
 class MessageKinds(enum.Enum):
     Call = 127
-    Cancel = 126
-    Next = 125
+    SubEvent = 125
     Publish = 1
     Accept = 0
-    Yield = -125
+    Undefined = -1
     Error = -126
     Reply = -127
 
@@ -106,7 +105,6 @@ class PublishRoute(eventRoute):
     publisherID: str
     subscriberID: str
     endpointID: str
-    visitedRouters: list[str]
 
 
 class Publication(PublishEvent):
@@ -142,7 +140,6 @@ class CallRoute(eventRoute):
     callerID: str
     executorID: str
     endpointID: str
-    visitedRouters: list[str]
 
 
 class Invocation(CallEvent):
@@ -151,21 +148,6 @@ class Invocation(CallEvent):
 
 class ReplyFeatures(eventFeatures):
     invocationID: str
-
-
-class CancelEvent(EventProto):
-    kind: typing.Literal[126]
-    features: ReplyFeatures
-
-
-def new_cancel_event(
-    features: ReplyFeatures,
-) -> CancelEvent:
-    return {
-        'ID': shared.new_id(),
-        'kind': MessageKinds.Cancel.value,
-        'features': features,
-    }
 
 
 class ReplyEvent[T: typing.Any](EventProto):
@@ -210,55 +192,27 @@ def new_error_event(
     }
 
 
-class YieldEvent[T: typing.Any](EventProto):
-    kind: typing.Literal[-125]
-    features: ReplyFeatures
+
+class SubEvent[T: typing.Any](EventProto):
+    kind: typing.Literal[125]
+    streamID: str
     payload: T
 
 
-def new_yield_event[T: typing.Any](
-    features: ReplyFeatures,
+def new_subevent[T: typing.Any](
+    streamID: str,
     payload: T,
-) -> YieldEvent[T]:
+) -> SubEvent[T]:
     return {
         'ID': shared.new_id(),
-        'kind': MessageKinds.Yield.value,
-        'features': features,
+        'kind': MessageKinds.SubEvent.value,
+        'streamID': streamID,
         'payload': payload,
     }
 
 
-class NextFeatures(eventFeatures):
-    yieldID: str
-    timeout: int
-
-
-class NextEvent(EventProto):
-    kind: typing.Literal[125]
-    features: NextFeatures
-
-
-def new_next_event(
-    features: NextFeatures,
-) -> NextEvent:
-    return {
-        'ID': shared.new_id(),
-        'kind': MessageKinds.Next.value,
-        'features': features,
-    }
-
-
-type StopEvent = CancelEvent
-
-
-new_stop_event = new_cancel_event
-
-
 type Event = (
-    AcceptEvent
-    | PublishEvent | Publication
-    | CallEvent | Invocation | ReplyEvent | CancelEvent | ErrorEvent
-    | YieldEvent | NextEvent | StopEvent
+    AcceptEvent | PublishEvent | Publication | CallEvent | Invocation | ReplyEvent | ErrorEvent | SubEvent
 )
 
 

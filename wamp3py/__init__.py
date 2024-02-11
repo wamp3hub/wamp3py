@@ -15,7 +15,7 @@ from .peer import (
 )
 from .session import (
     Session,
-    RemoteGenerator,
+    # RemoteGenerator,
 )
 from .serializers import (
     JSONSerializer,

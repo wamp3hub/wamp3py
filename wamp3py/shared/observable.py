@@ -50,3 +50,22 @@ class Observable[T]:
                     coro = observer.complete(*args, **kwargs)
                     tg.create_task(coro)
 
+    def as_iterator(self) -> typing.AsyncIterable[T]:
+        q = asyncio.Queue()
+        active = True
+
+        async def on_next(v: T):
+            await q.put(v)
+
+        async def on_complete():
+            nonlocal active
+            active = False
+
+        self.observe(on_next, on_complete)
+
+        async def consumer():
+            while active:
+                v = await q.get()
+                yield v
+
+        return consumer()

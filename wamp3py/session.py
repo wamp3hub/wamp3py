@@ -14,49 +14,27 @@ if typing.TYPE_CHECKING:
 DEFAULT_TIMEOUT = 60
 
 
-class RemoteGenerator:
+async def new_remote_generator(
+    peer: 'peer.Peer',
+    streamID: str,
+) -> typing.AsyncGenerator[typing.Any, domain.SubEvent]:
+    def on_stop(_):
+        # TODO check
+        raise StopAsyncIteration()
 
-    ID: str
-    active: bool
+    pending_stop_event = peer.pending_reply_events.new(streamID)
+    pending_stop_event.add_done_callback(on_stop)
 
-    def __init__(
-        self,
-        router: 'peer.Peer',
-        yield_event: domain.YieldEvent,
-    ):
-        self.active = True
-        self._router = router
-        self._last_yield_event = yield_event
-        self.ID = yield_event['payload']['ID']
+    async for yield_event in peer.incoming_subevents.as_iterator():
+        if yield_event['streamID'] != streamID:
+            continue
 
-    async def stop(self):
-        self.active = False
-        stop_event = domain.new_stop_event({'invocationID': self.ID})
-        await self._router.send(stop_event)
+        payload = yield yield_event
 
-    async def next(
-        self,
-        timeout = DEFAULT_TIMEOUT,
-    ) -> domain.YieldEvent | domain.ReplyEvent:
-        self.active = False
-        next_event = domain.new_next_event({'yieldID': self._last_yield_event['ID'], 'timeout': timeout})
-        pending_yield_event = self._router.pending_reply_events.new(next_event['ID'])
-        await self._router.send(next_event)
-        response = await pending_yield_event
-        if response['kind'] == domain.MessageKinds.Error.value:
-            if response['payload']['message'] == 'GeneratorExit':
-                raise StopAsyncIteration()
-            raise domain.ApplicationError(response['payload']['message'])
-        if response['kind'] == domain.MessageKinds.Yield.value:
-            self._last_yield_event = response
-            self.active = True
-        return response
+        next_event = domain.new_subevent(streamID, payload)
+        await peer.send(next_event)
 
-    async def __anext__(self):
-        return await self.next()
-
-    def __aiter__(self):
-        return self
+    pending_stop_event.cancel()
 
 
 class newResourcePayload(domain.Domain):
@@ -155,7 +133,7 @@ class Session:
         timeout: int = DEFAULT_TIMEOUT,
         include_roles: list[str] | None = None,
         exclude_roles: list[str] | None = None,
-    ) -> domain.ReplyEvent | domain.YieldEvent:
+    ) -> domain.ReplyEvent:
         if include_roles is None:
             logger.warn('fill in the list of allowed executor roles for security reasons')
             include_roles = []
@@ -173,7 +151,6 @@ class Session:
         response = await pending_reply_event
         if response['kind'] == domain.MessageKinds.Error.value:
             raise domain.ApplicationError(response['payload']['message'])
-        # TODO generator
         return response
 
     async def subscribe(

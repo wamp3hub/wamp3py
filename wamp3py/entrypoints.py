@@ -67,7 +67,10 @@ def PieceByPieceEntrypoint(procedure):
         pending_stop_event = router.pending_reply_events.new(streamID)
         pending_stop_event.add_done_callback(on_stop)
 
-        yield_event = domain.new_subevent(streamID, None)
+        yield_event = domain.new_error_event(
+            call_event,
+            domain.Start1to1(),
+        )
         await router.send(yield_event)
 
         async for next_event in router.incoming_subevents.as_iterator():

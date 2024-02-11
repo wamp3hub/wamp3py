@@ -23,6 +23,11 @@ class InvalidPayload(SomethingWentWrong):
     """
 
 
+class Start1to1(SomethingWentWrong):
+    """
+    """
+
+
 class ApplicationError(SomethingWentWrong):
     """
     if you want to display error messages to user,
@@ -157,13 +162,13 @@ class ReplyEvent[T: typing.Any](EventProto):
 
 
 def new_reply_event[T: typing.Any](
-    features: ReplyFeatures,
+    source: EventProto,
     payload: T,
 ) -> ReplyEvent[T]:
     return {
         'ID': shared.new_id(),
         'kind': MessageKinds.Reply.value,
-        'features': features,
+        'features': {'invocationID': source['ID']},
         'payload': payload,
     }
 
@@ -179,18 +184,17 @@ class ErrorEvent(EventProto):
 
 
 def new_error_event(
-    features: ReplyFeatures,
+    source: EventProto,
     e: SomethingWentWrong,
 ) -> ErrorEvent:
     return {
         'ID': shared.new_id(),
         'kind': MessageKinds.Error.value,
-        'features': features,
+        'features': {'invocationID': source['ID']},
         'payload': {
             'message': e.__class__.__name__,
         },
     }
-
 
 
 class SubEvent[T: typing.Any](EventProto):
@@ -212,7 +216,8 @@ def new_subevent[T: typing.Any](
 
 
 type Event = (
-    AcceptEvent | PublishEvent | Publication | CallEvent | Invocation | ReplyEvent | ErrorEvent | SubEvent
+    AcceptEvent | PublishEvent | Publication
+    | CallEvent | Invocation | ReplyEvent | ErrorEvent | SubEvent
 )
 
 

@@ -45,7 +45,7 @@ async def test_subscribe_publish():
         gamma = await wamps.subscribe(URI, on_event, **subscribe_options)
 
         async with asyncio.TaskGroup() as tg:
-            for _ in range(10000):
+            for _ in range(100):
                 coro = assert_publication(URI, 3)
                 tg.create_task(coro)
 

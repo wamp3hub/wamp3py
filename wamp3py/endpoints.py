@@ -2,7 +2,6 @@ import typing
 
 from . import domain
 from . import logger
-from . import shared
 
 
 class ProcedureToSubscribe[I](typing.Protocol):
@@ -46,7 +45,6 @@ class ProcedureToRegister[I, O](typing.Protocol):
 
 def CallEventEndpoint(procedure: ProcedureToRegister):
     async def execute(call_event: domain.Invocation) -> domain.ReplyEvent | domain.ErrorEvent:
-        reply_features: domain.ReplyFeatures = {'invocationID': call_event['ID']}
         try:
             payload = await procedure(
                 call_event['payload'],
@@ -54,12 +52,12 @@ def CallEventEndpoint(procedure: ProcedureToRegister):
                 event_features=call_event['features'],
                 event_route=call_event['route'],
             )
-            return domain.new_reply_event(reply_features, payload)
+            return domain.new_reply_event(call_event, payload)
         except domain.ApplicationError as e:
-            return domain.new_error_event(reply_features, e)
+            return domain.new_error_event(call_event, e)
         except Exception as e:
             logger.error('during execute call event endpoint', exception=repr(e))
-            return domain.new_error_event(reply_features, domain.ApplicationError())
+            return domain.new_error_event(call_event, domain.ApplicationError())
 
     return execute
 
@@ -84,16 +82,12 @@ class PieceByPiece:
             return domain.new_subevent(next_event['streamID'], payload)
         except (StopIteration, StopAsyncIteration):
             logger.debug('generator done')
-            return domain.new_error_event(
-                {'invocationID': next_event['ID']}, domain.GeneratorExit(),
-            )
+            return domain.new_error_event(next_event, domain.GeneratorExit())
         except domain.ApplicationError as e:
-            return domain.new_error_event({'invocationID': next_event['ID']}, e)
+            return domain.new_error_event(next_event, e)
         except Exception as e:
             logger.error('during execute call event endpoint', exception=repr(e))
-            return domain.new_error_event(
-                {'invocationID': next_event['ID']}, domain.ApplicationError(),
-            )
+            return domain.new_error_event(next_event, domain.ApplicationError())
 
     async def stop(
         self,
@@ -106,7 +100,7 @@ class PieceByPiece:
             await self._generator.athrow(__type, __value, __traceback)
 
 
-def PieceByPieceEndpoint(procedure: ProcedureToRegister):
+def PieceByPieceEndpoint(procedure):
     def execute(call_event: domain.Invocation) -> PieceByPiece:
         generator = procedure(
             call_event['payload'],
